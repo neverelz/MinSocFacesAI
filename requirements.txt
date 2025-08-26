@@ -1,0 +1,10 @@
+flask
+opencv-python
+insightface
+numpy
+pillow
+onnxruntime-gpu
+multiprocess
+pandas
+apscheduler
+requests

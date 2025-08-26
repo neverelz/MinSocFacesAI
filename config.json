@@ -1,0 +1,17 @@
+{
+  "SIMILARITY_THRESHOLD_KNOWN": 0.6,
+  "SIMILARITY_THRESHOLD_UNKNOWN": 0.4,
+  "TELEGRAM_TOKEN": "8418144469:AAG87NmoRc-4Q1C04aTwzvYf6Xgv9GDuzt4",
+  "TELEGRAM_CHAT_ID": [
+    694779393,
+    496564636
+  ],
+  "TIMEZONE": "Europe/Moscow",
+  "DAILY_REPORT_TIME": "18:00",
+  "UNKNOWN_DB_PATH": "db/unknown_db.pkl",
+  "CAMERAS": {
+    "cam1": 0,
+    "cam2": "rtsp://admin:hGm_37cD@10.12.19.68/Streaming/Channels/101",
+    "cam3": 1
+  }
+}

@@ -1,0 +1,41 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Отчёт по распознаванию</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Отчёт за {{ date }}</h1>
+
+        <form method="get" action="/report">
+            <label for="date">Выбрать дату:</label>
+            <input type="date" id="date" name="date" value="{{ date }}">
+            <button type="submit">Показать</button>
+        </form>
+
+        {% if message %}
+            <p class="error">{{ message }}</p>
+        {% endif %}
+
+        <h2>Известные лица:</h2>
+        <table>
+            <thead>
+                <tr><th>Время</th><th>Имя</th></tr>
+            </thead>
+            <tbody>
+                {% for row in known %}
+                <tr>
+                    <td>{{ row['time'] }}</td>
+                    <td>{{ row['name'] }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <h2>Уникальные unknown: {{ unknown_count }}</h2>
+    </div>
+</body>
+</html>

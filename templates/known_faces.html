@@ -1,0 +1,37 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Известные лица</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="header">
+        <h1>Список известных пользователей</h1>
+    </div>
+
+    {% if message %}
+    <div class="box success">{{ message }}</div>
+    {% endif %}
+
+    <div class="known-container">
+        <form method="post">
+            <label for="delete_name">Удалить пользователя:</label>
+            <select name="delete_name" required>
+                {% for name in names %}
+                    <option value="{{ name }}" {% if selected == name %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select>
+            <button class="control-button" type="submit">Удалить</button>
+        </form>
+    </div>
+
+    <div style="margin-top: 30px;">
+        <a href="/" class="control-button">⬅ Вернуться на главную</a>
+    </div>
+    <div style="margin-top: 30px;">
+        <a href="/" class="control-button">⬅ Вернуться на главную</a>
+    </div>
+</body>
+</html>

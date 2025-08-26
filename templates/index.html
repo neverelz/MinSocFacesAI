@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<title>Цифровой Центр</title>
+<link href="/static/style.css" rel="stylesheet"/>
+<style>
+        body {
+            background-color: #121212;
+            color: white;
+            font-family: sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+        }
+        h1 {
+            margin-top: 20px;
+        }
+        .logo {
+            width: 120px;
+            margin-top: 10px;
+        }
+        .video-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 20px;
+            gap: 20px;
+        }
+        .video-container img {
+            border: 2px solid #444;
+            border-radius: 12px;
+            max-width: 90%;
+            height: auto;
+        }
+        .button-container {
+            margin-top: 30px;
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            background-color: #7CFC00;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #7CFC00;
+        }
+    </style>
+</head>
+<body>
+<img alt="Эмблема" class="logo" src="/static/logo.png"/>
+<h1>ЦИФРОВОЙ ЦЕНТР</h1>
+<div class="button-container">
+        <div style="display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap;">
+            <select id="restartCamSelect" class="control-button" style="width:auto;padding:8px;color:#000;">
+                {% for key in camera_keys %}
+                <option value="{{ key }}">{{ key }}</option>
+                {% endfor %}
+            </select>
+            <button class="control-button" type="button" onclick="restartSelectedCam()">Перезапустить камеру</button>
+        </div>
+        <form action="/config" method="get" target="_blank">
+            <button class="control-button" type="submit">Настроить пороги</button>
+        </form>
+<form action="/start_all" method="post"><button class="control-button" onclick="postAndNotify('/start_all')" type="button">Запустить камеры</button></form>
+<form action="/stop_all" method="post"><button class="control-button" onclick="postAndNotify('/stop_all')" type="button">Остановить камеры</button></form>
+<form action="/known_faces" method="get" target="_blank">
+<button class="control-button" type="submit">Показать распознанных</button>
+</form>
+<form action="/clear_unknown" method="post"><button class="control-button" onclick="postAndNotify('/clear_unknown')" type="button">Очистить папку unknown</button></form>
+<form action="/rename_unknown" method="get" target="_blank">
+<button class="control-button" type="submit">Перенести из unknown</button>
+</form>
+<form action="/open_folder" method="get">
+<button class="control-button" type="submit">Открыть распознанных</button>
+</form>
+</div>
+<div class="video-container">
+<img alt="Камера 0" class="camera-feed" src="/video_feed/0"/>
+<img alt="Камера 1" class="camera-feed" src="/video_feed/1"/>
+<img alt="Камера 2" class="camera-feed" src="/video_feed/2"/>
+</div>
+<script>
+function postAndNotify(url, message) {
+    fetch(url, {method: 'POST'})
+        .then(response => response.json())
+        .then(data => {
+            showNotification(message || data.status);
+            if (url.includes('start_all') || url.includes('stop_all')) {
+                setTimeout(() => location.reload(), 1000);
+            }
+        });
+}
+
+function showNotification(text) {
+    const box = document.createElement('div');
+    box.textContent = text;
+    box.style.position = 'fixed';
+    box.style.bottom = '20px';
+    box.style.left = '50%';
+    box.style.transform = 'translateX(-50%)';
+    box.style.background = '#1e88e5';
+    box.style.color = '#fff';
+    box.style.padding = '12px 24px';
+    box.style.borderRadius = '8px';
+    box.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
+    box.style.zIndex = 1000;
+    document.body.appendChild(box);
+    setTimeout(() => document.body.removeChild(box), 3000);
+}
+
+async function groupUnknown() {
+    try {
+        const resp = await fetch('/group_unknown', {method:'POST'});
+        const data = await resp.json();
+        showToast(`Сгруппировано: ${data.merged} (всего: ${data.total})`);
+    } catch (e) {
+        showToast('Ошибка группировки');
+    }
+}
+async function sendDailyNow() {
+    try {
+        const resp = await fetch('/send_daily_now', {method:'POST'});
+        const data = await resp.json();
+        if (data.status === 'ok') showToast('Отчёт отправлен');
+        else showToast('Ошибка отправки');
+    } catch (e) {
+        showToast('Ошибка отправки');
+    }
+}
+
+
+async function restartCamera() {
+    const camKey = document.getElementById('restartCamSelect').value;
+    if (!camKey) { showToast('Камера не выбрана'); return; }
+    try {
+        const resp = await fetch(`/restart_camera?cam=${camKey}`, {method:'POST'});
+        const data = await resp.json();
+        if (data.status === 'ok') showToast(`Камера ${camKey} перезапущена`);
+        else showToast(`Ошибка: ${data.error || 'неизвестно'}`);
+    } catch (e) {
+        showToast('Ошибка перезапуска');
+    }
+}
+
+
+async function restartSelectedCam(){
+    const sel = document.getElementById('restartCamSelect');
+    if(!sel || !sel.value){ showToast('Нет камеры'); return; }
+    try{
+        const resp = await fetch('/restart_camera?cam='+encodeURIComponent(sel.value), {method:'POST'});
+        const data = await resp.json();
+        if(data.status==='ok'){ showToast('Камера перезапущена: '+sel.value); }
+        else{ showToast('Ошибка: '+(data.error||'неизвестно')); }
+    }catch(e){ showToast('Сбой запроса'); }
+}
+</script>
+</body>
+</html>
