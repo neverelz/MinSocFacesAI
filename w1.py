@@ -5,7 +5,7 @@ import pickle
 from tensorflow.keras.models import load_model
 from sklearn.metrics.pairwise import cosine_similarity
 
-MODEL_PATH = 'checkpoints/GN_W1.3_S1_ArcFace_epoch46.h5'
+MODEL_PATH = 'scrfd_detection/checkpoints/GN_W1.3_S1_ArcFace_epoch46.h5'
 EMBEDDINGS_FILE = 'saved_embeddings.pkl' # Кэш эмбеддингов
 THRESHOLD = 0.4                                        
 DATABASE_DIR = 'faces_database'  # фото людей (обработанные)
