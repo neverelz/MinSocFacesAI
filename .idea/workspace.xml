@@ -5,12 +5,66 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="6a303638-fe96-4d8a-a9ac-c4d6e35ee9a4" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/detection/boxing.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/detection/locationing.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/detection/main.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/scrfd_detection/detection.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/scrfd_detection/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/1/001.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/1/002.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/2/001.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/3/001.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/3/002.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/3/003.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/001.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/002.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/003.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/004.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/005.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/006.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/007.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/008.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/009.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/010.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/011.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/012.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/013.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/014.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/015.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/016.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/017.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/018.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/019.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/faces_database/4/020.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/scrfd_detection/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/1/img.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/1/img_1.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/2/img.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/3/img.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/3/img_1.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/3/img_2.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/WIN_20250910_13_53_24_Pro.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/WIN_20250910_13_53_27_Pro.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/WIN_20250910_13_53_29_Pro.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/WIN_20250910_13_53_30_Pro.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/WIN_20250910_13_53_32_Pro.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/WIN_20250910_13_53_33_Pro.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/WIN_20250910_13_53_35_Pro.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/WIN_20250910_13_53_37_Pro.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/WIN_20250910_13_53_38_Pro.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/WIN_20250910_13_53_39_Pro.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/WIN_20250910_13_53_40_Pro.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/WIN_20250910_13_53_43_Pro (2).jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/WIN_20250910_13_53_43_Pro.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/k1.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/k2.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/k3.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/k4.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/k5.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/kk1.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/raw_photos/4/kk2.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/recognizer.py" beforeDir="false" afterPath="$PROJECT_DIR$/scrfd_detection/recognizer.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/saved_embeddings.pkl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/test_env.py" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -42,6 +96,7 @@
   "keyToString": {
     "Python tests.Doctests in typing_objects.executor": "Run",
     "Python.camera.executor": "Run",
+    "Python.check_person.executor": "Run",
     "Python.locationing.executor": "Run",
     "Python.main.executor": "Run",
     "Python.recognizer.executor": "Run",
@@ -51,6 +106,7 @@
     "Python.yolo11.executor": "Run",
     "RunOnceActivity.OpenProjectViewOnStart": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
     "git-widget-placeholder": "katerina",
     "last_opened_file_path": "C:/Users/belya/Documents/GitHub/MinSocFacesAI/scrfd_detection/raw_photos/4",
     "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
