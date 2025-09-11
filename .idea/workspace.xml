@@ -44,6 +44,7 @@
     "Python.camera.executor": "Run",
     "Python.locationing.executor": "Run",
     "Python.main.executor": "Run",
+    "Python.recognizer.executor": "Run",
     "Python.test_env.executor": "Run",
     "Python.vladimir.executor": "Run",
     "Python.w1.executor": "Run",
@@ -51,11 +52,14 @@
     "RunOnceActivity.OpenProjectViewOnStart": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "git-widget-placeholder": "katerina",
-    "last_opened_file_path": "C:/Users/belya/Documents/GitHub/MinSocFacesAI",
+    "last_opened_file_path": "C:/Users/belya/Documents/GitHub/MinSocFacesAI/scrfd_detection/raw_photos/4",
     "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
   }
 }]]></component>
   <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\belya\Documents\GitHub\MinSocFacesAI\scrfd_detection\raw_photos\4" />
+    </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\belya\Documents\GitHub\MinSocFacesAI\scrfd_detection" />
     </key>

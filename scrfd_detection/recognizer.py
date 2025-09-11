@@ -10,7 +10,9 @@ from sklearn.metrics.pairwise import cosine_similarity
 # Пути
 MODEL_PATH = 'checkpoints/GN_W1.3_S1_ArcFace_epoch46.h5'
 EMBEDDINGS_FILE = 'saved_embeddings.pkl'
-DATABASE_DIR = 'faces_database'
+DATABASE_DIR = 'faces_database'  # фото людей (обработанные)
+RAW_PHOTOS_DIR = 'raw_photos' #  исходные фото людей
+OUTPUT_DIR = DATABASE_DIR # куда обработанные
 THRESHOLD = 0.4
 INPUT_SIZE = (112, 112)
 
@@ -33,9 +35,65 @@ class FaceRecognizer:
             raise ValueError("Модель выдает некорректные эмбеддинги")
         print(f"✅ Модель работает: эмбеддинг размером {test_emb.shape[1]}")
 
+        # обоработка фоток из raw
+        self.prepare_and_convert_all_photos()
+
         # Создаем базу эмбеддингов
         self.database = self.create_database(db_dir, cache_file)
         print(f"✅ База данных загружена: {len(self.database)} человек")
+
+    def prepare_and_convert_all_photos(self):
+        """
+        Рекурсивно проходит по папкам в raw_photos,
+        изменяет размер на 112x112, конвертирует BGR в RGB,
+        и сохраняет в faces_database с нумерацией
+        """
+        print(f"папка {RAW_PHOTOS_DIR}")
+
+        if not os.path.exists(RAW_PHOTOS_DIR):
+            raise FileNotFoundError(f"не найдено: {RAW_PHOTOS_DIR}")
+
+        processed_count = 0
+
+        for person_name in os.listdir(RAW_PHOTOS_DIR):
+            person_path = os.path.join(RAW_PHOTOS_DIR, person_name)
+
+            if not os.path.isdir(person_path):
+                continue
+
+            output_person_dir = os.path.join(OUTPUT_DIR, person_name)
+            os.makedirs(output_person_dir, exist_ok=True)
+
+            print(f"обработка: {person_name}")
+
+            file_idx = 1
+
+            for filename in os.listdir(person_path):
+                if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
+                    input_path = os.path.join(person_path, filename)
+                    output_path = os.path.join(output_person_dir, f"{file_idx:03d}.jpg")
+
+                    try:
+                        img = cv2.imread(input_path)
+                        if img is None:
+                            print(f"пропуск: {filename}")
+                            continue
+
+                        img_resized = cv2.resize(img, (112, 112))
+
+                        img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
+
+                        cv2.imwrite(output_path, img_rgb)
+
+                        print(f" {filename} ? {output_path}")
+                        processed_count += 1
+                        file_idx += 1
+
+                    except Exception as e:
+                        print(f"Ошибка при обработке {filename}: {e}")
+
+        print(f"обработно {processed_count} фото в папку: {OUTPUT_DIR}")
+
 
     def preprocess(self, img):
         """Подготавливает изображение под модель"""
