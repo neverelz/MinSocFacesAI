@@ -13,7 +13,7 @@ from collections import defaultdict
 MODEL_PATH = 'checkpoints/GN_W1.3_S1_ArcFace_epoch46.h5'
 EMBEDDINGS_FILE = 'saved_embeddings.pkl'
 DATABASE_DIR = 'faces_database'
-THRESHOLD = 0.8
+THRESHOLD = 0.5
 INPUT_SIZE = (112, 112)
 
 

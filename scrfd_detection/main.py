@@ -7,7 +7,6 @@ import numpy as np
 from detection import FaceDetector
 from recognizer import FaceRecognizer
 import sys
-import threading
 
 
 def align_face_by_kps(frame, kps, output_size=(112, 112)):
@@ -97,80 +96,7 @@ class FaceSaver:
         return saved_path
 
 
-class AsyncCamera:
-    """Потоковый видеозахват: всегда хранит последний кадр для плавного отображения."""
-    def __init__(self, cap_obj, width: int = 1280, height: int = 720):
-        self.cap = cap_obj
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        try:
-            # уменьшить буфер драйвера, чтобы не было лага накопившихся кадров
-            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        except Exception:
-            pass
-        self.lock = threading.Lock()
-        self.running = False
-        self.latest = None
-        self.thread = None
-
-    def start(self):
-        if not self.cap.isOpened():
-            return False
-        self.running = True
-        self.thread = threading.Thread(target=self._loop, daemon=True)
-        self.thread.start()
-        return True
-
-    def _loop(self):
-        while self.running:
-            # Быстрый захват кадра без блокировок GUI
-            if not self.cap.grab():
-                time.sleep(0.005)
-                continue
-            ret, frame = self.cap.retrieve()
-            if not ret:
-                time.sleep(0.003)
-                continue
-            with self.lock:
-                self.latest = frame
-
-    def read(self):
-        with self.lock:
-            if self.latest is None:
-                return False, None
-            return True, self.latest.copy()
-
-    def release(self):
-        self.running = False
-        if self.thread is not None:
-            self.thread.join(timeout=1.0)
-        if self.cap is not None:
-            self.cap.release()
-
-
-def _create_capture_with_fallback(preferred_index=1, width=1280, height=720):
-    backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
-    indices = [preferred_index, 0, 1, 2]
-    for idx in indices:
-        for backend in backends:
-            cap = cv2.VideoCapture(idx, backend)
-            if cap is None or not cap.isOpened():
-                if cap is not None:
-                    cap.release()
-                continue
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-            return cap, idx, backend
-    return None, None, None
-
-
 def main():
-    # Включаем оптимизации OpenCV
-    try:
-        cv2.setUseOptimized(True)
-    except Exception:
-        pass
-
     # Выбор автоочистки перед запуском
     auto_clear = False
     try:
@@ -190,31 +116,21 @@ def main():
         # После очистки база пустая; при первом сохранении ID начнётся с 1
     saver = FaceSaver(recognizer, save_interval_sec=2.0)
 
-    # Открываем камеру с перебором бэкендов/индексов
-    cap, used_idx, used_backend = _create_capture_with_fallback(preferred_index=1, width=1280, height=720)
-    if cap is None:
-        print("❌ Не удалось открыть видеопоток ни на одном бэкенде/индексе.")
-        return
-    camera = AsyncCamera(cap, width=1280, height=720)
-    if not camera.start():
-        print("❌ Не удалось запустить поток камеры.")
+    # Открываем камеру
+    cap = cv2.VideoCapture(1)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
+    if not cap.isOpened():
+        print("❌ Не удалось открыть видеопоток.")
         return
 
     WINDOW_NAME = 'Face Recognition System'
-    cv2.namedWindow(WINDOW_NAME)
-    print(f"✅ Камера запущена (index={used_idx}). Нажми 'q' для выхода. Кликни по боксу 'Неизвестно' чтобы добавить в базу.")
+    print("✅ Видеопоток запущен. Нажми 'q' для выхода. Кликни по боксу 'Неизвестно' чтобы добавить в базу.")
 
     status_text = ""
     status_until = 0
     current_faces = []  # список словарей: {bbox, name, sim, face_img}
-
-    # Троттлинг детекции/распознавания
-    min_det_interval = 0.1  # секунды, ~10 Гц
-    last_det_ts = 0.0
-    cached_bboxes = []
-    cached_patches = []
-    cached_names = []
-    cached_sims = []
 
     # Обработчик кликов мыши
     def on_mouse(event, x, y, flags, userdata=None):
@@ -235,82 +151,50 @@ def main():
                         status_until = time.time() + 1.5
                     break
 
+    cv2.namedWindow(WINDOW_NAME)
     cv2.setMouseCallback(WINDOW_NAME, on_mouse)
 
-    # Ждём первый кадр до 2 секунд, чтобы окно сразу отрисовалось
-    t0 = time.time()
-    first_frame = None
-    while time.time() - t0 < 2.0:
-        ok, frame = camera.read()
-        if ok:
-            first_frame = frame
-            break
-        cv2.waitKey(1)
-        time.sleep(0.01)
-
-    if first_frame is None:
-        # Плейсхолдер, чтобы окно было видно
-        placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
-        cv2.putText(placeholder, "Ожидание кадра с камеры...", (30, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-        cv2.imshow(WINDOW_NAME, placeholder)
-        cv2.waitKey(1)
-
     while True:
-        ok, frame = camera.read()
-        if not ok:
-            # Отрисуем плейсхолдер, чтобы окно оставалось активным
-            ph = np.zeros((480, 640, 3), dtype=np.uint8)
-            cv2.putText(ph, "Нет кадра...", (30, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-            cv2.imshow(WINDOW_NAME, ph)
-            if (cv2.waitKey(1) & 0xFF) == ord('q'):
-                break
-            time.sleep(0.02)
-            continue
+        ret, frame = cap.read()
+        if not ret:
+            print("⚠️ Ошибка чтения кадра.")
+            break
 
         frame = cv2.flip(frame, 1)  # зеркало
+        faces = detector.detect(frame)
 
-        now = time.time()
-        need_update = (now - last_det_ts) >= min_det_interval
-
-        if need_update:
-            faces = detector.detect(frame)
-
-            # Собираем лица для батча
-            face_patches = []
-            face_bboxes = []
-            for face in faces:
-                bbox = face.bbox.astype(int)
-                x1, y1, x2, y2 = bbox
-                raw_face = frame[y1:y2, x1:x2]
-                if raw_face.size == 0:
-                    continue
-                patch = raw_face
-                if hasattr(face, 'kps') and face.kps is not None and np.array(face.kps).shape == (5, 2):
-                    aligned = align_face_by_kps(frame, face.kps)
-                    if aligned is not None:
-                        patch = aligned
-                face_patches.append(patch)
-                face_bboxes.append((x1, y1, x2, y2))
-
-            # Батч-распознавание
-            names = []
-            sims = []
-            if face_patches:
-                names, sims = recognizer.recognize_batch(face_patches)
-
-            # Кешируем результаты
-            cached_bboxes = face_bboxes
-            cached_patches = face_patches
-            cached_names = names
-            cached_sims = sims
-            last_det_ts = now
-
-        # Используем закешированные результаты для отрисовки
+        # Сброс списка текущих лиц
         current_faces = []
-        for i, (x1, y1, x2, y2) in enumerate(cached_bboxes):
-            face_img = cached_patches[i]
-            name = cached_names[i]
-            sim = cached_sims[i]
+
+        # Собираем лица для батча
+        face_patches = []
+        face_bboxes = []
+        face_kps = []
+        for face in faces:
+            bbox = face.bbox.astype(int)
+            x1, y1, x2, y2 = bbox
+            raw_face = frame[y1:y2, x1:x2]
+            if raw_face.size == 0:
+                continue
+            patch = raw_face
+            if hasattr(face, 'kps') and face.kps is not None and np.array(face.kps).shape == (5, 2):
+                aligned = align_face_by_kps(frame, face.kps)
+                if aligned is not None:
+                    patch = aligned
+            face_patches.append(patch)
+            face_bboxes.append((x1, y1, x2, y2))
+
+        # Батч-распознавание
+        names = []
+        sims = []
+        if face_patches:
+            names, sims = recognizer.recognize_batch(face_patches)
+
+        # Отрисовка результатов
+        for i, (x1, y1, x2, y2) in enumerate(face_bboxes):
+            face_img = face_patches[i]
+            name = names[i]
+            sim = sims[i]
 
             current_faces.append({
                 'bbox': (x1, y1, x2, y2),
@@ -327,13 +211,18 @@ def main():
             cv2.putText(frame, label, (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
-            # Сохранение каждые 2 секунды и пропуск при высокой уверенности внутри maybe_save
             saved_path = saver.maybe_save((x1, y1, x2, y2), face_img, name, sim)
             if saved_path:
                 cv2.putText(frame, "Saved", (x1, y2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
 
+            # Ключевые точки (если есть)
+            if hasattr(face, 'kps'):
+                kps = face.kps.astype(int)
+                for pt in kps:
+                    cv2.circle(frame, tuple(pt), 3, (255, 0, 0), -1)
+
         # Общее количество лиц
-        cv2.putText(frame, f'Faces: {len(cached_bboxes)}', (10, 30),
+        cv2.putText(frame, f'Faces: {len(faces)}', (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
         # Статусная строка (временная)
@@ -348,7 +237,7 @@ def main():
         if key == ord('q'):
             break
 
-    camera.release()
+    cap.release()
     cv2.destroyAllWindows()
 
 if __name__ == '__main__':
