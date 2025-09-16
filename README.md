@@ -9,3 +9,6 @@
 
 - Если Windows блокирует скрипты, включи разрешение выполнения в PowerShell (один раз от админа):
 ### Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+
+- Запуск кода в терминале
+### python minsocfacesai\src\camera_inference.py -m models\yolox_s.onnx
