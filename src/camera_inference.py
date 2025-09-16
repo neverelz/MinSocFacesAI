@@ -2,15 +2,37 @@ import cv2
 import onnxruntime as ort
 import numpy as np
 import argparse
+import os
+from pathlib import Path
 from camera import get_ivcam_stream
 from utils import preprocess, postprocess, draw_boxes
 
-def run_camera_inference(model_path, source_url=0):
-    # Подключение к IVcam
-    cap = get_ivcam_stream(cv2.VideoCapture(source_url))
+def _resolve_model_path(model_path: str) -> str:
+    p = Path(model_path)
+    if p.exists():
+        return str(p)
+
+    script_dir = Path(__file__).resolve().parent
+    candidates = []
+    # Если путь относительный — пробуем относительно структуры проекта
+    if not p.is_absolute():
+        # 1) src/../models/<filename>
+        candidates.append(script_dir.parent / "models" / p.name)
+        # 2) src/../<provided_relative>
+        candidates.append(script_dir.parent / p)
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    return str(p)
+
+
+def run_camera_inference(model_path, source=0):
+    # Подключение к IVCam/камере
+    cap = get_ivcam_stream(source)
 
     # Загружаем модель
-    session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+    resolved_model = _resolve_model_path(model_path)
+    session = ort.InferenceSession(resolved_model, providers=["CPUExecutionProvider"])
     input_name = session.get_inputs()[0].name
 
     print("Starting inference from camera. Press 'q' to quit.")
@@ -45,7 +67,12 @@ def run_camera_inference(model_path, source_url=0):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-m", "--model", required=True, help="Path to ONNX model")
-    parser.add_argument("--url", default=cv2.VideoCapture(0), help="IVcam source URL")
+    parser.add_argument("--source", default="0", help="Camera index (e.g. 0/1) or URL (rtsp/http)")
     args = parser.parse_args()
 
-    run_camera_inference(args.model, args.url)
+    src = args.source
+    # Преобразуем числовую строку в int для корректной работы бэкендов устройств
+    if isinstance(src, str) and src.isdigit():
+        src = int(src)
+
+    run_camera_inference(args.model, src)

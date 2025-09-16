@@ -26,26 +26,66 @@ def preprocess(image, input_shape=(640, 640)):
     return blob, scale
 
 def postprocess(outputs, scale, conf_thres=0.3, iou_thres=0.45):
-    boxes = outputs[0][:, :4]
-    scores = outputs[0][:, 4:5] * outputs[0][:,5:]
-    boxes_xyxy = np.zeros_like(boxes)
-    boxes_xyxy[:,0] = boxes[:,0] - boxes[:,2]/2
-    boxes_xyxy[:,1] = boxes[:,1] - boxes[:,3]/2
-    boxes_xyxy[:,2] = boxes[:,0] + boxes[:,2]/2
-    boxes_xyxy[:,3] = boxes[:,1] + boxes[:,3]/2
-    boxes_xyxy /= scale
+    pred = outputs[0]
+    # Ожидаемый формат YOLOX ONNX: (1, N, 85) или (N, 85)
+    if pred.ndim == 3 and pred.shape[0] == 1:
+        pred = pred[0]
+    elif pred.ndim != 2:
+        # Неожиданный формат вывода
+        return []
+
+    if pred.size == 0:
+        return []
+
+    boxes_cxcywh = pred[:, :4]
+    objectness = pred[:, 4:5]
+    class_scores = pred[:, 5:]
+    # Полные оценки: obj * class_prob по каждому классу
+    scores = objectness * class_scores
+
+    # Преобразуем в XYXY и масштабируем обратно к исходному изображению
+    boxes_xyxy = np.zeros_like(boxes_cxcywh)
+    boxes_xyxy[:, 0] = boxes_cxcywh[:, 0] - boxes_cxcywh[:, 2] / 2.0
+    boxes_xyxy[:, 1] = boxes_cxcywh[:, 1] - boxes_cxcywh[:, 3] / 2.0
+    boxes_xyxy[:, 2] = boxes_cxcywh[:, 0] + boxes_cxcywh[:, 2] / 2.0
+    boxes_xyxy[:, 3] = boxes_cxcywh[:, 1] + boxes_cxcywh[:, 3] / 2.0
+    boxes_xyxy /= max(scale, 1e-6)
+
     results = []
-    for class_id in range(scores.shape[1]):
+    num_classes = scores.shape[1]
+    for class_id in range(num_classes):
         cls_scores = scores[:, class_id]
         mask = cls_scores > conf_thres
         if not np.any(mask):
             continue
-        cls_boxes = boxes_xyxy[mask]
-        cls_scores = cls_scores[mask]
-        indices = cv2.dnn.NMSBoxes(cls_boxes.tolist(), cls_scores.tolist(), conf_thres, iou_thres)
-        if len(indices) > 0:
-            for i in indices.flatten():
-                results.append((cls_boxes[i], cls_scores[i], class_id))
+        cls_boxes_xyxy = boxes_xyxy[mask]
+        cls_scores_f = cls_scores[mask].astype(float)
+
+        # cv2.dnn.NMSBoxes ожидает [x, y, w, h]
+        cls_boxes_xywh = np.empty_like(cls_boxes_xyxy)
+        cls_boxes_xywh[:, 0] = cls_boxes_xyxy[:, 0]
+        cls_boxes_xywh[:, 1] = cls_boxes_xyxy[:, 1]
+        cls_boxes_xywh[:, 2] = cls_boxes_xyxy[:, 2] - cls_boxes_xyxy[:, 0]
+        cls_boxes_xywh[:, 3] = cls_boxes_xyxy[:, 3] - cls_boxes_xyxy[:, 1]
+
+        # Фильтруем боксы с отрицательной/нулевой шириной/высотой
+        valid_wh = (cls_boxes_xywh[:, 2] > 1) & (cls_boxes_xywh[:, 3] > 1)
+        if not np.any(valid_wh):
+            continue
+        cls_boxes_xywh = cls_boxes_xywh[valid_wh]
+        cls_boxes_xyxy = cls_boxes_xyxy[valid_wh]
+        cls_scores_f = cls_scores_f[valid_wh]
+
+        indices = cv2.dnn.NMSBoxes(
+            bboxes=cls_boxes_xywh.tolist(),
+            scores=cls_scores_f.tolist(),
+            score_threshold=conf_thres,
+            nms_threshold=iou_thres,
+        )
+        if indices is None or len(indices) == 0:
+            continue
+        for i in np.array(indices).flatten():
+            results.append((cls_boxes_xyxy[i], float(cls_scores_f[i]), class_id))
     return results
 
 def draw_boxes(image, results):
