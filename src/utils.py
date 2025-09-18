@@ -25,22 +25,78 @@ def preprocess(image, input_shape=(640, 640)):
     blob = new_img.transpose(2,0,1)[None, :, :, :].astype(np.float32)/255.0
     return blob, scale
 
-def postprocess(outputs, scale, conf_thres=0.3, iou_thres=0.45):
+def _sigmoid(x):
+    return 1.0 / (1.0 + np.exp(-x))
+
+
+def _generate_grids_and_strides(input_h, input_w, strides=(8, 16, 32)):
+    """Генерация сетки для YOLOX. Порядок аргументов: (height, width)."""
+    grids = []
+    expanded_strides = []
+    for stride in strides:
+        grid_h = input_h // stride
+        grid_w = input_w // stride
+        yv, xv = np.meshgrid(np.arange(grid_h), np.arange(grid_w), indexing="ij")
+        grid = np.stack((xv, yv), axis=2).reshape(-1, 2)
+        grids.append(grid)
+        expanded_strides.append(np.full((grid.size // 2, 1), stride))
+    grids = np.concatenate(grids, axis=0)
+    expanded_strides = np.concatenate(expanded_strides, axis=0)
+    return grids.astype(np.float32), expanded_strides.astype(np.float32)
+
+
+def _decode_yolox_outputs(pred, input_size=(640, 640)):
+    # pred: (N, 85) до сигмоиды, box в формате дельт
+    # input_size: (h, w)
+    grids, strides = _generate_grids_and_strides(input_size[0], input_size[1])
+    # убеждаемся в совместимости размеров
+    n = pred.shape[0]
+    g = grids[:n]
+    s = strides[:n]
+    decoded = pred.copy()
+    decoded[:, 0:2] = (decoded[:, 0:2] + g) * s
+    decoded[:, 2:4] = np.exp(decoded[:, 2:4]) * s
+    # применяем сигмоиду к obj и классам
+    decoded[:, 4:] = _sigmoid(decoded[:, 4:])
+    return decoded
+
+
+def postprocess(outputs, scale, conf_thres=0.3, iou_thres=0.45, input_size=(640, 640), mode: str = "auto"):
     pred = outputs[0]
     # Ожидаемый формат YOLOX ONNX: (1, N, 85) или (N, 85)
     if pred.ndim == 3 and pred.shape[0] == 1:
         pred = pred[0]
     elif pred.ndim != 2:
-        # Неожиданный формат вывода
         return []
 
     if pred.size == 0:
         return []
 
+    # Выбор режима декодирования
+    if mode not in ("auto", "raw", "decoded"):
+        mode = "auto"
+
+    if mode == "raw":
+        pred = _decode_yolox_outputs(pred, input_size=input_size)
+    elif mode == "decoded":
+        # вероятности могут быть логитами — приведём к [0,1] при необходимости
+        if pred.shape[1] > 5 and (np.max(pred[:, 4]) > 1.0 or np.max(pred[:, 5:]) > 1.0):
+            pred[:, 4:] = _sigmoid(pred[:, 4:])
+    else:
+        # Авто: пытаемся угадать
+        n = pred.shape[0]
+        max_cls_logits = float(np.max(pred[:, 5:])) if pred.shape[1] > 5 else 0.0
+        max_xy = float(np.max(pred[:, :2])) if pred.shape[1] >= 2 else 0.0
+        likely_raw = (n in (8400, 25200)) and (max_cls_logits > 1.5 or max_xy < 10.0)
+        if likely_raw:
+            pred = _decode_yolox_outputs(pred, input_size=input_size)
+        else:
+            if max_cls_logits > 1.0 or np.max(pred[:, 4]) > 1.0:
+                pred[:, 4:] = _sigmoid(pred[:, 4:])
+
     boxes_cxcywh = pred[:, :4]
     objectness = pred[:, 4:5]
     class_scores = pred[:, 5:]
-    # Полные оценки: obj * class_prob по каждому классу
     scores = objectness * class_scores
 
     # Преобразуем в XYXY и масштабируем обратно к исходному изображению
@@ -68,7 +124,6 @@ def postprocess(outputs, scale, conf_thres=0.3, iou_thres=0.45):
         cls_boxes_xywh[:, 2] = cls_boxes_xyxy[:, 2] - cls_boxes_xyxy[:, 0]
         cls_boxes_xywh[:, 3] = cls_boxes_xyxy[:, 3] - cls_boxes_xyxy[:, 1]
 
-        # Фильтруем боксы с отрицательной/нулевой шириной/высотой
         valid_wh = (cls_boxes_xywh[:, 2] > 1) & (cls_boxes_xywh[:, 3] > 1)
         if not np.any(valid_wh):
             continue
@@ -85,7 +140,13 @@ def postprocess(outputs, scale, conf_thres=0.3, iou_thres=0.45):
         if indices is None or len(indices) == 0:
             continue
         for i in np.array(indices).flatten():
-            results.append((cls_boxes_xyxy[i], float(cls_scores_f[i]), class_id))
+            # Ограничим координаты границами изображения после обратного масштабирования
+            x1, y1, x2, y2 = cls_boxes_xyxy[i]
+            x1 = max(0, x1)
+            y1 = max(0, y1)
+            x2 = max(x1 + 1, x2)
+            y2 = max(y1 + 1, y2)
+            results.append((np.array([x1, y1, x2, y2], dtype=np.float32), float(cls_scores_f[i]), class_id))
     return results
 
 def draw_boxes(image, results):

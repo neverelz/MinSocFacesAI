@@ -26,7 +26,7 @@ def _resolve_model_path(model_path: str) -> str:
     return str(p)
 
 
-def run_camera_inference(model_path, source=0):
+def run_camera_inference(model_path, source=0, conf=0.5, iou=0.5, input_size="640,640", mode="auto"):
     # Подключение к IVCam/камере
     cap = get_ivcam_stream(source)
 
@@ -34,6 +34,12 @@ def run_camera_inference(model_path, source=0):
     resolved_model = _resolve_model_path(model_path)
     session = ort.InferenceSession(resolved_model, providers=["CPUExecutionProvider"])
     input_name = session.get_inputs()[0].name
+
+    # Небольшой прогрев камеры и автоэкспозиции
+    for _ in range(5):
+        ret, _ = cap.read()
+        if not ret:
+            break
 
     print("Starting inference from camera. Press 'q' to quit.")
 
@@ -44,13 +50,20 @@ def run_camera_inference(model_path, source=0):
             break
 
         # Препроцессинг
-        blob, scale = preprocess(frame)
+        # Парсим размер входа
+        try:
+            w_str, h_str = str(input_size).split(",")
+            in_w, in_h = int(w_str), int(h_str)
+        except Exception:
+            in_w, in_h = 640, 640
+
+        blob, scale = preprocess(frame, input_shape=(in_h, in_w))
 
         # Инференс
         outputs = session.run(None, {input_name: blob})
 
-        # Постпроцессинг
-        results = postprocess(outputs, scale)
+        # Постпроцессинг с настраиваемыми порогами
+        results = postprocess(outputs, scale, conf_thres=conf, iou_thres=iou, input_size=(in_h, in_w), mode=mode)
 
         # Отрисовка боксов
         frame_vis = draw_boxes(frame.copy(), results)
@@ -68,6 +81,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-m", "--model", required=True, help="Path to ONNX model")
     parser.add_argument("--source", default="0", help="Camera index (e.g. 0/1) or URL (rtsp/http)")
+    parser.add_argument("--conf", type=float, default=0.5, help="Confidence threshold")
+    parser.add_argument("--iou", type=float, default=0.5, help="IoU threshold for NMS")
+    parser.add_argument("--input-size", default="640,640", help="Model input size 'W,H' (e.g. 640,640)")
+    parser.add_argument("--decode", choices=["auto", "raw", "decoded"], default="auto", help="YOLOX output decode mode")
     args = parser.parse_args()
 
     src = args.source
@@ -75,4 +92,4 @@ if __name__ == "__main__":
     if isinstance(src, str) and src.isdigit():
         src = int(src)
 
-    run_camera_inference(args.model, src)
+    run_camera_inference(args.model, src, conf=args.conf, iou=args.iou, input_size=args.input_size, mode=args.decode)
