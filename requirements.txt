@@ -1,17 +1,13 @@
-# Основные библиотеки для YOLOX + инференс
-numpy>=1.19
-opencv-python>=4.5
-Pillow>=8.0
+numpy>=1.23
+opencv-python>=4.8
+Pillow>=9.0
 
-# ONNX + ONNXRuntime (для инференса)
-onnx>=1.9
-onnxruntime>=1.9
+# PyTorch (Detectron2 совместимая версия: подбирайте под вашу CUDA/CPU)
+torch>=2.1
+torchvision>=0.16
 
-# Torch (для работы с checkpoint .pth, если понадобится)
-torch>=1.8
-
-# OpenVINO (для инференса через IR)
-openvino>=2022.1
+# Detectron2 (будет устанавливаться из колеса, см. README)
+detectron2>=0.6
 
 # Утилиты
-tqdm>=4.60
+tqdm>=4.66

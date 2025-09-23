@@ -1,3 +1,40 @@
+## Обновление: переход на Detectron2 (коммерческое использование)
+
+В проекте удалена зависимость от YOLOX. Инференс выполняется через Detectron2. Для соблюдения коммерческой лицензии требуется использовать веса, на которые у вас есть права (например, собственная тренировка или лицензированные коммерчески допустимые веса). Модельный зоопарк Detectron2 может поставляться с ограничениями на некоммерческое использование предобученных весов — не используйте их в проде.
+
+### Установка
+
+1) Установите PyTorch, совместимый с вашей системой (CPU/CUDA):
+
+```bash
+pip install --upgrade pip
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+```
+
+2) Установите Detectron2 (подберите колесо под вашу версию CUDA/torch):
+
+```bash
+pip install 'detectron2>=0.6'
+```
+
+3) Базовые зависимости:
+
+```bash
+pip install -r requirements.txt
+```
+
+### Запуск детекции с камеры
+
+Обязателен путь к весам `--weights`, на которые у вас есть коммерческие права.
+
+```bash
+python -m src.camera_inference --source 0 --device cpu --conf 0.5 \
+  --config COCO-Detection/retinanet_R_50_FPN_3x.yaml \
+  --weights D:/models/retinanet_custom.pth
+```
+
+По умолчанию результаты фильтруют людей и животных. Изменить список можно в `src/d2_predictor.py` (`COCO_EXCLUDE_CLASSES`).
+
 =======================
      * README.MD *
 =======================
@@ -15,7 +52,7 @@
 ### Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 
 - Запуск кода в терминале
-### python minsocfacesai\src\camera_inference.py -m models\yolox_s.onnx --source 0 --conf 0.35 --iou 0.5
+### python minsocfacesai\src\camera_inference.py -m models\yolox_s.onnx --source 0 --conf 0.35 --iou 0.5`
 
 ### --source 1   если IVcam,   
 ### --source 0   если фронталка на пк 
