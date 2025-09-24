@@ -7,8 +7,8 @@ __pycache__/
 *.so
 
 # Игнорировать модели
-/models/
-/outputs/
+/YOLOX/models/
+/YOLOX/outputs/
 /assets/dog.jpg
 
 # Distribution / packaging
