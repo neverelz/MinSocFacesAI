@@ -11,6 +11,8 @@ __pycache__/
 /YOLOX/outputs/
 /assets/dog.jpg
 
+/myenv/
+
 # Distribution / packaging
 .Python
 build/

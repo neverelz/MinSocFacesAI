@@ -41,6 +41,7 @@ class ONNXModel:
         img, orig_shape, ratio_pad = self.preprocess(image)
         inp_name = self.session.get_inputs()[0].name
         outputs = self.session.run(None, {inp_name: img})
+        print([o.shape for o in outputs])
         dets = postprocess_onx_output(outputs, orig_shape, (self.input_size, self.input_size),
                                       conf_thres=CONFIDENCE_THRESHOLD)
         if dets.shape[0] == 0:
@@ -54,6 +55,7 @@ class ONNXModel:
             cls_mask = dets[:,5] == cls
             boxes = dets[cls_mask][:,:4]
             scores = dets[cls_mask][:,4]
+
             keep = []
             if boxes.shape[0] > 0:
                 keep_idx = np.array( self._nms(boxes, scores, NMS_IOU_THRESHOLD) , dtype=int)

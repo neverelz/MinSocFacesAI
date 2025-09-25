@@ -9,3 +9,18 @@
    python -m venv venv
    source venv/bin/activate
    pip install -r requirements.txt
+
+
+
+python mmdeploy/tools/deploy.py `
+  mmdeploy/configs/mmdet/detection/detection_onnxruntime_static.py `
+  mmdetection/configs/rtmdet/rtmdet_m_8xb32-300e_coco.py `
+  checkpoints/rtmdet_m_8xb32-300e_coco_20220719_112220-229f527c.pth `
+  mmdetection/demo/demo.jpg `
+  --work-dir mmdeploy_model/rtmdet `
+  --device cpu `
+  --dump-info
+
+
+
+python MinSocFacesAI/RTMDet/main.py --model mmdeploy_model/rtmdet/end2end.onnx
