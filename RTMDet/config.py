@@ -23,5 +23,5 @@ MAX_DETECTIONS = 200
 USE_GPU = True
 
 # Список классов, которые следует исключить (люди и животные), указываются в файле classes_coco.py
-EXCLUDE_CLASSES = ["dog", "cat", "horse", "sheep", "cow", "elephant",
-                   "bear", "zebra", "giraffe"]
+EXCLUDE_CLASSES = ["person", "dog", "cat", "horse", "sheep", "cow", "elephant",
+                   "bear", "zebra", "giraffe", "toilet"]
