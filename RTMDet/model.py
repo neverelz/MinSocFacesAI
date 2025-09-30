@@ -9,7 +9,7 @@ from config import INPUT_SIZE, CONFIDENCE_THRESHOLD, NMS_IOU_THRESHOLD, MAX_DETE
 class ONNXModel:
     def __init__(self, model_path, use_gpu=False, input_size=640):
         """
-        model_path : путь к end2end.onnx
+        model_path : путь к end2endm.onnx
         use_gpu    : попытка использовать CUDA/ TensorRT (для Intel CPU оставляем False)
         input_size : размер, на который приводим входное изображение
         """
