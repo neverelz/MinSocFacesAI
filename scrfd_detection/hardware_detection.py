@@ -62,7 +62,7 @@ def get_optimal_settings(hardware_level):
         }
     else:  # CPU_ONLY
         return {
-            'process_interval_sec': 0.3,
+            'process_interval_sec': 0.35,
             'camera_width': 640,
             'camera_height': 480,
             'camera_fps': 10,

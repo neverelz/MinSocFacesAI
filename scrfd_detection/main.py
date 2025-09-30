@@ -11,6 +11,8 @@ from detection import FaceDetector
 from recognizer import FaceRecognizer
 from camera import AsyncCameraReader
 from hardware_detection import estimate_hardware_level, get_optimal_settings, select_hardware_level_interactive
+from hands_detection import MultiHandDetector
+from people_detection import HybridPeopleDetector
 
 from PIL import Image, ImageDraw
 
@@ -177,6 +179,12 @@ class AsyncFaceProcessor:
         self.frame_queue = Queue(maxsize=2)
         self.result_queue = Queue(maxsize=1)
         self.show_keypoints = True  # ← Флаг отображения точек
+        self.show_hands = False     # ← Флаг отрисовки рук
+        self.show_people = False    # ← Флаг отрисовки людей (experiments)
+
+        # Модули для рук и людей (ленивая инициализация)
+        self._hand_detector = None
+        self._people_detector = None
 
         # Логгер
         self.logger = logging.getLogger(f"camera_{camera_index}")
@@ -199,6 +207,12 @@ class AsyncFaceProcessor:
 
     def set_show_keypoints(self, show: bool):
         self.show_keypoints = show
+
+    def set_show_hands(self, show: bool):
+        self.show_hands = show
+
+    def set_show_people(self, show: bool):
+        self.show_people = show
 
     def start(self):
         self.thread = threading.Thread(target=self.run, daemon=True)
@@ -278,6 +292,27 @@ class AsyncFaceProcessor:
                                 for pt in kps.astype(int):
                                     if 0 <= pt[0] < frame.shape[1] and 0 <= pt[1] < frame.shape[0]:
                                         cv2.circle(frame, (pt[0], pt[1]), 3, (255, 0, 0), -1)
+
+                # === ОТРИСОВКА ЛЮДЕЙ И РУК ===
+                if self.show_people:
+                    if self._people_detector is None:
+                        self._people_detector = HybridPeopleDetector()
+                    try:
+                        boxes, scores = self._people_detector.detect(frame)
+                        for (x1, y1, x2, y2), score in zip(boxes, scores):
+                            cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 200, 0), 2)
+                            cv2.putText(frame, f'{float(score):.2f}', (int(x1), int(y1) - 8),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 200, 0), 1)
+                    except Exception as e:
+                        self.logger.error(f"People overlay error: {e}")
+
+                if self.show_hands:
+                    if self._hand_detector is None:
+                        self._hand_detector = MultiHandDetector(max_hands=6)
+                    try:
+                        frame, _, _ = self._hand_detector.detect_hands(frame)
+                    except Exception as e:
+                        self.logger.error(f"Hand overlay error: {e}")
 
                 frame = put_text_russian(frame, f"FPS: {self.fps:.1f}", (10, 30), font_path=get_font_path(),
                                          font_size=24, color=(255, 255, 255))
@@ -384,13 +419,15 @@ def main():
         print("❌ Не удалось запустить ни одну камеру")
         return
 
-    print("✅ Система запущена. Нажмите 'q' для выхода, 'm' — вкл/выкл ключевые точки.")
+    print("✅ Система запущена. Горячие клавиши: q — выход, m — точки лица, h — руки, e — люди.")
 
     WINDOW_NAME = "Система распознавания лиц"
     cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
     status_text, status_until = "", 0
     current_faces_per_cam = {}
-    show_keypoints = True  # ← ГЛОБАЛЬНЫЙ ФЛАГ
+    show_keypoints = True  # ← ГЛОБАЛЬНЫЕ ФЛАГИ
+    show_hands = False
+    show_people = False
 
     def on_mouse(event, x, y, flags, userdata=None):
         nonlocal status_text, status_until
@@ -418,9 +455,11 @@ def main():
             n = len(processors)
             if n == 0: break
 
-            # Обновляем флаг отображения точек для всех процессоров
+            # Обновляем флаги для всех процессоров
             for p in processors:
                 p.set_show_keypoints(show_keypoints)
+                p.set_show_hands(show_hands)
+                p.set_show_people(show_people)
 
             # Определяем сетку
             if n == 1:
@@ -497,10 +536,12 @@ def main():
             combined = put_text_russian(combined, f'Лица: {total_faces} | Люди: {len(unique_ids)}', (10, 40),
                                         font_path=get_font_path(), font_size=32, color=(0, 0, 255))
 
-            # Индикатор отображения точек
+            # Индикаторы режимов
             kp_status = "ВКЛ" if show_keypoints else "ВЫКЛ"
-            combined = put_text_russian(combined, f'Точки: {kp_status} (нажмите M)', (10, combined.shape[0] - 30),
-                                        font_path=get_font_path(), font_size=20, color=(255, 255, 0))
+            hands_status = "ВКЛ" if show_hands else "ВЫКЛ"
+            people_status = "ВКЛ" if show_people else "ВЫКЛ"
+            combined = put_text_russian(combined, f'Точки: {kp_status} (M)  |  Руки: {hands_status} (H)  |  Люди: {people_status} (E)',
+                                        (10, combined.shape[0] - 30), font_path=get_font_path(), font_size=20, color=(255, 255, 0))
 
             if status_text and time.time() < status_until:
                 combined = put_text_russian(combined, status_text, (10, 110),
@@ -515,6 +556,12 @@ def main():
             elif key == ord('m') or key == ord('M'):
                 show_keypoints = not show_keypoints
                 print(f"🔑 Ключевые точки: {'ВКЛЮЧЕНЫ' if show_keypoints else 'ВЫКЛЮЧЕНЫ'}")
+            elif key == ord('h') or key == ord('H'):
+                show_hands = not show_hands
+                print(f"🖐️ Руки: {'ВКЛЮЧЕНЫ' if show_hands else 'ВЫКЛЮЧЕНЫ'}")
+            elif key == ord('e') or key == ord('E'):
+                show_people = not show_people
+                print(f"🚶 Люди (experiments): {'ВКЛЮЧЕНО' if show_people else 'ВЫКЛЮЧЕНО'}")
 
     except KeyboardInterrupt:
         system_logger.info("🛑 Получен сигнал прерывания.")
