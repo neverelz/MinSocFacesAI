@@ -1,4 +1,4 @@
-# main.py — финальная версия с логами и FPS
+# main.py — финальная версия с переключением ключевых точек (M)
 
 import cv2
 import time
@@ -12,27 +12,22 @@ from recognizer import FaceRecognizer
 from camera import AsyncCameraReader
 from hardware_detection import estimate_hardware_level, get_optimal_settings, select_hardware_level_interactive
 
-# Для русского текста
 from PIL import Image, ImageDraw
 
 # === ЛОГИРОВАНИЕ ===
 LOG_DIR = "logs"
 os.makedirs(LOG_DIR, exist_ok=True)
-
-# Удаляем старые логи
 for f in os.listdir(LOG_DIR):
     if f.endswith(".log"):
         os.remove(os.path.join(LOG_DIR, f))
 
-# Общий логгер
 system_logger = logging.getLogger("system")
 system_handler = logging.FileHandler(os.path.join(LOG_DIR, "system.log"), encoding='utf-8')
-system_formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+system_formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
 system_handler.setFormatter(system_formatter)
 system_logger.addHandler(system_handler)
 system_logger.setLevel(logging.INFO)
 
-# Глобальный кэш шрифтов
 _FONT_CACHE = {}
 
 
@@ -42,8 +37,7 @@ def get_font_cached(font_path, font_size):
         try:
             from PIL import ImageFont
             _FONT_CACHE[key] = ImageFont.truetype(font_path, font_size)
-        except IOError:
-            system_logger.warning(f"Шрифт {font_path} не найден. Используется дефолтный.")
+        except:
             _FONT_CACHE[key] = ImageFont.load_default()
     return _FONT_CACHE[key]
 
@@ -60,11 +54,7 @@ def get_font_path():
     candidates = [
         "arial.ttf",
         "C:/Windows/Fonts/arial.ttf",
-        "DejaVuSans.ttf",
-        "times.ttf",
-        "C:/Windows/Fonts/times.ttf",
-        "verdana.ttf",
-        "C:/Windows/Fonts/verdana.ttf"
+        "DejaVuSans.ttf"
     ]
     for path in candidates:
         try:
@@ -77,24 +67,16 @@ def get_font_path():
 
 
 def align_face_by_kps(frame, kps, output_size=(112, 112)):
-    ref = np.array(
-        [
-            [38.2946, 51.6963],
-            [73.5318, 51.5014],
-            [56.0252, 71.7366],
-            [41.5493, 92.3655],
-            [70.7299, 92.2041],
-        ],
-        dtype=np.float32,
-    )
+    ref = np.array([[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.7366],
+                    [41.5493, 92.3655], [70.7299, 92.2041]], dtype=np.float32)
     src = kps.astype(np.float32)
     transform = cv2.estimateAffinePartial2D(src, ref, method=cv2.LMEDS)[0]
     if transform is None:
         return None
-    aligned = cv2.warpAffine(frame, transform, output_size, flags=cv2.INTER_LINEAR)
-    return aligned
+    return cv2.warpAffine(frame, transform, output_size, flags=cv2.INTER_LINEAR)
 
 
+# =============== КЛАССЫ ТРЕКИНГА ===============
 class GlobalFaceTrack:
     def __init__(self, person_id: str):
         self.person_id = person_id
@@ -184,36 +166,30 @@ class GlobalFaceSaver:
         return saved_path
 
 
+# =============== ОБРАБОТЧИК КАМЕР ===============
 class AsyncFaceProcessor:
-    def __init__(self, camera_index: int, detector, recognizer, saver, max_queue_size=3, process_interval=4.0):
+    def __init__(self, camera_index: int, detector, recognizer, saver, settings):
         self.camera_index = camera_index
         self.detector = detector
         self.recognizer = recognizer
         self.saver = saver
-        self.frame_queue = Queue(maxsize=max_queue_size)
+        self.process_interval = settings['process_interval_sec']
+        self.frame_queue = Queue(maxsize=2)
         self.result_queue = Queue(maxsize=1)
-        self.process_interval = process_interval
+        self.show_keypoints = True  # ← Флаг отображения точек
 
-        # Логгер для камеры
+        # Логгер
         self.logger = logging.getLogger(f"camera_{camera_index}")
         handler = logging.FileHandler(os.path.join(LOG_DIR, f"camera_{camera_index}.log"), encoding='utf-8')
-        formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
-        handler.setFormatter(formatter)
+        handler.setFormatter(logging.Formatter('%(asctime)s | %(levelname)s | %(message)s'))
         self.logger.addHandler(handler)
         self.logger.setLevel(logging.INFO)
 
-        height = 480
-        width = 640
-        blank = np.zeros((height, width, 3), dtype=np.uint8)
-        blank = put_text_russian(blank, f"Источник {camera_index + 1} ИНИЦИАЛИЗАЦИЯ...", (50, height // 2),
+        # Инициализация
+        blank = np.zeros((480, 640, 3), dtype=np.uint8)
+        blank = put_text_russian(blank, f"Источник {camera_index + 1} ИНИЦИАЛИЗАЦИЯ...", (50, 240),
                                  font_path=get_font_path(), font_size=24, color=(255, 255, 0))
-
-        self.last_result = {
-            'frame': blank,
-            'faces': [],
-            'camera_index': camera_index,
-            'original_size': (width, height)
-        }
+        self.last_result = {'frame': blank, 'faces': [], 'camera_index': camera_index, 'original_size': (640, 480)}
 
         self.stop_event = threading.Event()
         self.thread = None
@@ -221,13 +197,16 @@ class AsyncFaceProcessor:
         self.last_fps_time = time.time()
         self.processed_count = 0
 
+    def set_show_keypoints(self, show: bool):
+        self.show_keypoints = show
+
     def start(self):
         self.thread = threading.Thread(target=self.run, daemon=True)
         self.thread.start()
         print(f"🧠 Поток обработки для камеры {self.camera_index} запущен")
 
     def run(self):
-        self.logger.info(f"▶️ Запущен")
+        self.logger.info("▶️ Запущен")
         last_process_time = 0
         frame_count = 0
 
@@ -249,15 +228,11 @@ class AsyncFaceProcessor:
             if self.processed_count % 5 == 0:
                 elapsed = now - self.last_fps_time
                 self.fps = 5 / elapsed if elapsed > 0 else 0
-                self.logger.info(f"📈 Средний FPS обработки: {self.fps:.2f} (всего обработано: {self.processed_count})")
                 self.last_fps_time = now
-
-            self.logger.info(f"🧠 Обрабатываем кадр #{frame_count} (интервал: {self.process_interval} сек)")
 
             try:
                 faces = self.detector.detect(frame)
-                face_patches = []
-                face_bboxes = []
+                face_patches, face_bboxes = [], []
 
                 for face in faces:
                     bbox = face.bbox.astype(int)
@@ -271,75 +246,56 @@ class AsyncFaceProcessor:
                         aligned = align_face_by_kps(frame, face.kps)
                         if aligned is not None:
                             patch = aligned
-
                     face_patches.append(patch)
                     face_bboxes.append((x1, y1, x2, y2))
 
-                names = []
-                sims = []
-                if face_patches:
-                    names, sims = self.recognizer.recognize_batch(face_patches)
+                names, sims = self.recognizer.recognize_batch(face_patches) if face_patches else ([], [])
 
                 current_faces = []
                 for i, (x1, y1, x2, y2) in enumerate(face_bboxes):
                     face_img = face_patches[i]
-                    name = names[i]
-                    sim = sims[i]
-
-                    current_faces.append({
-                        'bbox': (x1, y1, x2, y2),
-                        'name': name,
-                        'sim': sim,
-                        'face_img': face_img.copy(),
-                    })
+                    name, sim = names[i], sims[i]
+                    current_faces.append(
+                        {'bbox': (x1, y1, x2, y2), 'name': name, 'sim': sim, 'face_img': face_img.copy()})
 
                     color = (0, 255, 0) if name != "Неизвестно" else (0, 0, 255)
                     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-
-                    label = f"{name} ({sim:.2f})"
-                    if name == "Неизвестно":
-                        label += " — кликните"
-
-                    frame = put_text_russian(frame, label, (x1, y1 - 30),
-                                             font_path=get_font_path(), font_size=26, color=color)
+                    label = f"{name} ({sim:.2f})" + (" — кликните" if name == "Неизвестно" else "")
+                    frame = put_text_russian(frame, label, (x1, y1 - 30), font_path=get_font_path(), font_size=26,
+                                             color=color)
 
                     saved_path = self.saver.maybe_save(self.camera_index, (x1, y1, x2, y2), face_img, name, sim)
                     if saved_path:
-                        frame = put_text_russian(frame, "Сохранено", (x1, y2 + 20),
-                                                 font_path=get_font_path(), font_size=22, color=(255, 255, 0))
+                        frame = put_text_russian(frame, "Сохранено", (x1, y2 + 20), font_path=get_font_path(),
+                                                 font_size=22, color=(255, 255, 0))
 
-                    if hasattr(face, 'kps'):
-                        kps = face.kps.astype(int)
-                        for pt in kps:
-                            cv2.circle(frame, tuple(pt), 3, (255, 0, 0), -1)
+                # === ОТРИСОВКА КЛЮЧЕВЫХ ТОЧЕК (если включено) ===
+                if self.show_keypoints:
+                    for face in faces:
+                        if hasattr(face, 'kps') and face.kps is not None:
+                            kps = np.array(face.kps)
+                            if kps.shape == (5, 2):
+                                for pt in kps.astype(int):
+                                    if 0 <= pt[0] < frame.shape[1] and 0 <= pt[1] < frame.shape[0]:
+                                        cv2.circle(frame, (pt[0], pt[1]), 3, (255, 0, 0), -1)
 
-                # Отображаем FPS
-                frame = put_text_russian(frame, f"FPS: {self.fps:.1f}", (10, 30),
-                                         font_path=get_font_path(), font_size=24, color=(255, 255, 255))
-
+                frame = put_text_russian(frame, f"FPS: {self.fps:.1f}", (10, 30), font_path=get_font_path(),
+                                         font_size=24, color=(255, 255, 255))
                 frame = put_text_russian(frame, f"Источник {self.camera_index + 1}", (10, 70),
                                          font_path=get_font_path(), font_size=28, color=(255, 255, 255))
 
-                result = {
+                self.last_result = {
                     'frame': frame,
                     'faces': current_faces,
                     'camera_index': self.camera_index,
                     'original_size': (frame.shape[1], frame.shape[0])
                 }
-                self.last_result = result
 
-                try:
-                    if self.result_queue.full():
-                        self.result_queue.get_nowait()
-                    self.result_queue.put_nowait(result)
-                except Full:
-                    pass
-
-                self.logger.info(f"✅ Кадр #{frame_count} обработан")
+                if not self.result_queue.full():
+                    self.result_queue.put_nowait(self.last_result)
 
             except Exception as e:
-                self.logger.error(f"❌ Ошибка обработки: {e}")
-                continue
+                self.logger.error(f"❌ Ошибка: {e}")
 
     def stop(self):
         self.stop_event.set()
@@ -363,131 +319,96 @@ class AsyncFaceProcessor:
             return self.last_result
 
 
-def find_available_cameras(max_tested=20):
+# =============== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===============
+def find_available_cameras(max_tested=10):
     available = []
     for i in range(max_tested):
         cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
-        if not cap.isOpened():
-            cap.release()
-            continue
-
-        for _ in range(3):
-            ret, _ = cap.read()
-            if ret:
-                available.append(i)
-                break
-            time.sleep(0.1)
+        if cap.isOpened():
+            for _ in range(3):
+                ret, _ = cap.read()
+                if ret:
+                    available.append(i)
+                    break
+                time.sleep(0.1)
         cap.release()
-
     return available
 
 
+# =============== ОСНОВНАЯ ФУНКЦИЯ ===============
 def main():
-    estimated_level, score, details = estimate_hardware_level()
-    print(f"\n💻 Обнаружено железо: {estimated_level.upper} (score: {score:.1f})")
-    print("📊 Детали:", details)
+    estimated_level, details = estimate_hardware_level()
 
-    selected_level = select_hardware_level_interactive(estimated_level)
-    settings = get_optimal_settings(selected_level)
+    if estimated_level == "nvidia_gpu":
+        print("✅ Обнаружен NVIDIA GPU — будет использоваться GPU")
+    else:
+        print("⚠️ NVIDIA GPU не обнаружен — используется CPU")
 
-    print("\n🚀 Используемые настройки:")
-    print(f"   💻 Уровень: {selected_level.upper()}")
-    print(f"   ⚙️  Обработка: 1 кадр / {settings['process_interval_sec']} сек")
-    print(f"   📷 Разрешение: {settings['camera_width']}x{settings['camera_height']}")
-    print(f"   🎞️  FPS камер: {settings['camera_fps']}")
-    print(f"   🧩 Выравнивание лиц: Всегда включено ✅")
-    print("   📸 Камеры: Все доступные видеоисточники\n")
+    settings = get_optimal_settings(estimated_level)
+    print(f"\n🚀 Настройки: разрешение {settings['camera_width']}x{settings['camera_height']}, "
+          f"обработка раз в {settings['process_interval_sec']} сек")
 
-    auto_clear = False
-    try:
-        ans = input("Очистить базу лиц и кэш эмбеддингов перед запуском? (y/N): ").strip().lower()
-        auto_clear = ans in ("y", "yes", "д", "да")
-    except Exception:
-        pass
+    auto_clear = input("Очистить базу лиц? (y/N): ").strip().lower() in ("y", "yes", "д", "да")
+    system_logger.info(f"Запуск: уровень={estimated_level}, очистка={auto_clear}")
 
-    system_logger.info("=== ЗАПУСК СИСТЕМЫ ===")
-    system_logger.info(f"Уровень железа: {selected_level}, Очистка БД: {auto_clear}")
-
-    detector = FaceDetector(model_name='scrfd_10g_kps', device_id=0)
-    recognizer = FaceRecognizer(force_rebuild=auto_clear)
+    # ВСЕГДА используем модель с ключевыми точками!
+    detector = FaceDetector(
+        model_name='scrfd_10g_kps',
+        use_gpu=settings['use_gpu'],
+        det_size=settings['det_size']
+    )
+    recognizer = FaceRecognizer(force_rebuild=auto_clear, use_gpu=settings['use_gpu'])
     if auto_clear:
         recognizer.clear_database_and_cache()
     saver = GlobalFaceSaver(recognizer, save_interval_sec=2.0)
 
-    print("🔍 Поиск доступных камер...")
-    camera_indices = find_available_cameras(max_tested=20)
+    print("🔍 Поиск камер...")
+    camera_indices = find_available_cameras()
     print(f"🎥 Найдены камеры: {camera_indices}")
 
     if not camera_indices:
-        print("❌ Не найдено ни одного видеоисточника")
+        print("❌ Камеры не найдены")
         return
 
-    camera_readers = []
-    processors = []
-
+    camera_readers, processors = [], []
     for idx in camera_indices:
-        reader = AsyncCameraReader(
-            idx,
-            width=settings['camera_width'],
-            height=settings['camera_height'],
-            fps=settings['camera_fps']
-        )
+        reader = AsyncCameraReader(idx, settings['camera_width'], settings['camera_height'], settings['camera_fps'])
         if reader.start():
             camera_readers.append(reader)
-            warmup_time = 0.5
-            print(f"⏳ [Камера {idx}] Прогрев на {warmup_time} сек...")
-            time.sleep(warmup_time)
-
-            processor = AsyncFaceProcessor(
-                idx,
-                detector,
-                recognizer,
-                saver,
-                process_interval=settings['process_interval_sec']
-            )
+            time.sleep(0.5)  # прогрев
+            processor = AsyncFaceProcessor(idx, detector, recognizer, saver, settings)
             processor.start()
             processors.append(processor)
-        else:
-            print(f"⚠️  Камера {idx} не запущена")
 
     if not processors:
-        print("❌ Ни один процессор не запущен")
+        print("❌ Не удалось запустить ни одну камеру")
         return
 
-    print("✅ Система запущена. Нажмите 'q' для выхода. Кликните по рамке 'Неизвестно' чтобы добавить в базу.")
+    print("✅ Система запущена. Нажмите 'q' для выхода, 'm' — вкл/выкл ключевые точки.")
 
     WINDOW_NAME = "Система распознавания лиц"
     cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
-
-    status_text = ""
-    status_until = 0
+    status_text, status_until = "", 0
     current_faces_per_cam = {}
+    show_keypoints = True  # ← ГЛОБАЛЬНЫЙ ФЛАГ
 
     def on_mouse(event, x, y, flags, userdata=None):
         nonlocal status_text, status_until
         if event == cv2.EVENT_LBUTTONDOWN:
             for cam_idx, data in current_faces_per_cam.items():
-                faces = data['faces']
-                offset_x = data['offset_x']
-                offset_y = data['offset_y']
-                for item in faces:
-                    (bx1, by1, bx2, by2) = item['bbox']
-                    bx1_global = bx1 + offset_x
-                    by1_global = by1 + offset_y
-                    bx2_global = bx2 + offset_x
-                    by2_global = by2 + offset_y
-
-                    if bx1_global <= x <= bx2_global and by1_global <= y <= by2_global:
+                for item in data['faces']:
+                    bx1, by1, bx2, by2 = item['bbox']
+                    if (bx1 + data['offset_x'] <= x <= bx2 + data['offset_x'] and
+                            by1 + data['offset_y'] <= y <= by2 + data['offset_y']):
                         if item['name'] == "Неизвестно":
                             new_id = recognizer.get_next_person_id()
                             recognizer.add_image_to_person(new_id, item['face_img'])
-                            status_text = f"✅ Добавлен ID {new_id} с камеры {cam_idx}"
+                            status_text = f"✅ Добавлен ID {new_id}"
                             status_until = time.time() + 2.0
-                            system_logger.info(f"🎉 УСПЕХ: Добавлен новый человек с ID {new_id} с камеры {cam_idx}")
+                            system_logger.info(f"Добавлен {new_id} с камеры {cam_idx}")
                         else:
                             status_text = f"ℹ️ Уже в базе: {item['name']}"
                             status_until = time.time() + 1.5
-                            system_logger.info(f"📌 Лицо уже известно: {item['name']}")
                         return
 
     cv2.setMouseCallback(WINDOW_NAME, on_mouse)
@@ -495,10 +416,13 @@ def main():
     try:
         while True:
             n = len(processors)
-            if n == 0:
-                break
+            if n == 0: break
 
-            # Определяем сетку один раз
+            # Обновляем флаг отображения точек для всех процессоров
+            for p in processors:
+                p.set_show_keypoints(show_keypoints)
+
+            # Определяем сетку
             if n == 1:
                 rows, cols = 1, 1
             elif n <= 2:
@@ -514,26 +438,18 @@ def main():
                 cols = math.ceil(math.sqrt(n))
                 rows = math.ceil(n / cols)
 
-            # Получаем кадры
-            frames = []
             results = [p.get_result() for p in processors]
-            for result in results:
-                frame = result['frame'] if result else np.zeros((480, 640, 3), dtype=np.uint8)
-                frames.append(frame)
-
+            frames = [r['frame'] if r else np.zeros((480, 640, 3), dtype=np.uint8) for r in results]
             min_h = min(f.shape[0] for f in frames) if frames else 480
             max_widths = [int(f.shape[1] * min_h / f.shape[0]) for f in frames]
             max_w = max(max_widths) if max_widths else 640
 
-            # Собираем сетку
-            grid_h = rows * min_h
-            grid_w = cols * max_w
+            grid_h, grid_w = rows * min_h, cols * max_w
             combined = np.zeros((grid_h, grid_w, 3), dtype=np.uint8)
-
             current_faces_per_cam.clear()
+
             for i, (processor, result) in enumerate(zip(processors, results)):
-                row = i // cols
-                col = i % cols
+                row, col = i // cols, i % cols
                 frame = result['frame'] if result else np.zeros((480, 640, 3), dtype=np.uint8)
                 h_orig, w_orig = frame.shape[:2]
                 scale = min_h / h_orig
@@ -544,7 +460,6 @@ def main():
                 y_offset = row * min_h
                 combined[y_offset:y_offset + min_h, x_offset:x_offset + new_w] = resized
 
-                # Подготавливаем данные для клика
                 scaled_faces = []
                 if result:
                     for face in result['faces']:
@@ -566,14 +481,12 @@ def main():
                     'offset_y': y_offset
                 }
 
-                # Отправляем свежий кадр в обработчик
                 reader = next((r for r in camera_readers if r.camera_index == processor.camera_index), None)
                 if reader:
                     frame_raw = reader.get_frame(timeout=0.001)
                     if frame_raw is not None:
                         processor.submit_frame(frame_raw)
 
-            # Статистика
             unique_ids = set()
             total_faces = 0
             for data in current_faces_per_cam.values():
@@ -583,6 +496,11 @@ def main():
 
             combined = put_text_russian(combined, f'Лица: {total_faces} | Люди: {len(unique_ids)}', (10, 40),
                                         font_path=get_font_path(), font_size=32, color=(0, 0, 255))
+
+            # Индикатор отображения точек
+            kp_status = "ВКЛ" if show_keypoints else "ВЫКЛ"
+            combined = put_text_russian(combined, f'Точки: {kp_status} (нажмите M)', (10, combined.shape[0] - 30),
+                                        font_path=get_font_path(), font_size=20, color=(255, 255, 0))
 
             if status_text and time.time() < status_until:
                 combined = put_text_russian(combined, status_text, (10, 110),
@@ -594,6 +512,9 @@ def main():
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q'):
                 break
+            elif key == ord('m') or key == ord('M'):
+                show_keypoints = not show_keypoints
+                print(f"🔑 Ключевые точки: {'ВКЛЮЧЕНЫ' if show_keypoints else 'ВЫКЛЮЧЕНЫ'}")
 
     except KeyboardInterrupt:
         system_logger.info("🛑 Получен сигнал прерывания.")
