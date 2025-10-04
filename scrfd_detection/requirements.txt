@@ -1,11 +1,34 @@
-insightface==0.7.3
-pickle5 ; python_version < '3.8'
-numpy==1.24.3
-tensorflow==2.13.1
-opencv-python==4.9.0.80
-insightface==0.7.3
-scikit-learn==1.3.0
-onnxruntime==1.15.1
-tqdm
-psutil
-Pillow
+# Кросс-платформенные зависимости для системы распознавания лиц
+insightface>=0.7.3
+numpy>=1.21.0
+opencv-python>=4.5.0
+scikit-learn>=1.0.0
+onnxruntime>=1.12.0
+tqdm>=4.62.0
+psutil>=5.8.0
+Pillow>=8.3.0
+
+# TensorFlow с оптимизациями для разных платформ
+# Windows: лучше работает с CUDA
+tensorflow>=2.12.0; platform_system=="Windows"
+# Linux: оптимизированная версия
+tensorflow>=2.12.0; platform_system=="Linux"  
+# macOS: отдельная ветка
+tensorflow-macos>=2.10.0; platform_system=="Darwin"
+tensorflow-metal>=0.5.0; platform_system=="Darwin"
+
+# PyTorch для определения GPU (опционально)
+torch>=1.12.0; platform_system=="Windows" or platform_system=="Linux"
+torch>=1.12.0; platform_system=="Darwin"
+
+# MediaPipe для распознавания рук и поз
+mediapipe>=0.9.0
+
+# Совместимость с Python < 3.8
+pickle5>=0.0.11; python_version < "3.8"
+
+# Опциональные зависимости для лучшей производительности
+# Intel MKL optimizations для Linux
+intel-openmp>=2021.3; platform_system=="Linux"
+# Windows Visual C++ redistributable optimizations  
+microsoft-visual-cpp-redist; platform_system=="Windows"

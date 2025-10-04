@@ -6,10 +6,11 @@ import numpy as np
 import pickle
 from tensorflow.keras.models import load_model
 from collections import defaultdict
+from platform_utils import normalize_path, safe_makedirs
 
-MODEL_PATH = 'checkpoints/GN_W1.3_S1_ArcFace_epoch46.h5'
-EMBEDDINGS_FILE = 'saved_embeddings.pkl'
-DATABASE_DIR = 'faces_database'
+MODEL_PATH = normalize_path('checkpoints/GN_W1.3_S1_ArcFace_epoch46.h5')
+EMBEDDINGS_FILE = normalize_path('saved_embeddings.pkl')
+DATABASE_DIR = safe_makedirs('faces_database', exist_ok=True)
 THRESHOLD = 0.5
 INPUT_SIZE = (112, 112)
 
@@ -30,7 +31,22 @@ class FaceRecognizer:
             tf.config.threading.set_inter_op_parallelism_threads(0)
 
         if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Модель не найдена: {model_path}")
+            # Попробуем найти модель в других возможных местах
+            alternative_paths = [
+                os.path.join(os.path.dirname(__file__), 'checkpoints', 'GN_W1.3_S1_ArcFace_epoch46.h5'),
+                os.path.join(os.path.dirname(__file__), '..', 'checkpoints', 'GN_W1.3_S1_ArcFace_epoch46.h5'),
+                '../checkpoints/GN_W1.3_S1_ArcFace_epoch46.h5',
+                './checkpoints/GN_W1.3_S1_ArcFace_epoch46.h5'
+            ]
+            
+            for alt_path in alternative_paths:
+                alt_path = normalize_path(alt_path)
+                if os.path.exists(alt_path):
+                    model_path = alt_path
+                    print(f"✅ Модель найдена в: {model_path}")
+                    break
+            else:
+                raise FileNotFoundError(f"Модель не найдена. Проверьте файл: {model_path}")
 
         self.model = load_model(model_path)
         print("✅ Модель распознавания загружена")
@@ -64,8 +80,7 @@ class FaceRecognizer:
                     return pickle.load(f)
                 except:
                     pass
-        if not os.path.exists(db_dir):
-            os.makedirs(db_dir, exist_ok=True)
+        db_dir = safe_makedirs(db_dir, exist_ok=True)
         database = {}
         for person_name in os.listdir(db_dir):
             person_path = os.path.join(db_dir, person_name)
@@ -133,8 +148,7 @@ class FaceRecognizer:
         return names, sims
 
     def get_next_person_id(self) -> str:
-        if not os.path.exists(DATABASE_DIR):
-            os.makedirs(DATABASE_DIR, exist_ok=True)
+        DATABASE_DIR = safe_makedirs(DATABASE_DIR, exist_ok=True)
         max_id = 0
         for name in os.listdir(DATABASE_DIR):
             if os.path.isdir(os.path.join(DATABASE_DIR, name)) and name.isdigit():
@@ -159,8 +173,7 @@ class FaceRecognizer:
         return max(nums) + 1 if nums else 1
 
     def add_image_to_person(self, person_id: str, face_img_bgr: np.ndarray) -> str:
-        person_dir = os.path.join(DATABASE_DIR, person_id)
-        os.makedirs(person_dir, exist_ok=True)
+        person_dir = safe_makedirs(os.path.join(DATABASE_DIR, person_id), exist_ok=True)
         idx = self._get_next_image_index(person_id)
         filepath = os.path.join(person_dir, f"{idx:03d}.jpg")
         cv2.imwrite(filepath, face_img_bgr)
@@ -198,5 +211,5 @@ class FaceRecognizer:
         self._all_embeddings = None
         self._all_labels = []
         self._label_to_indices = defaultdict(list)
-        os.makedirs(self.db_dir, exist_ok=True)
+        self.db_dir = safe_makedirs(self.db_dir, exist_ok=True)
         print("🧹 База и кэш очищены.")

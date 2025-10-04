@@ -13,12 +13,13 @@ from camera import AsyncCameraReader
 from hardware_detection import estimate_hardware_level, get_optimal_settings, select_hardware_level_interactive
 from hands_detection import MultiHandDetector
 from people_detection import HybridPeopleDetector
+from fire import EarlyFireDetector
+from platform_utils import get_font_candidates, normalize_path, safe_makedirs, get_platform_info
 
 from PIL import Image, ImageDraw
 
 # === ЛОГИРОВАНИЕ ===
-LOG_DIR = "logs"
-os.makedirs(LOG_DIR, exist_ok=True)
+LOG_DIR = safe_makedirs("logs", exist_ok=True)
 for f in os.listdir(LOG_DIR):
     if f.endswith(".log"):
         os.remove(os.path.join(LOG_DIR, f))
@@ -38,7 +39,10 @@ def get_font_cached(font_path, font_size):
     if key not in _FONT_CACHE:
         try:
             from PIL import ImageFont
-            _FONT_CACHE[key] = ImageFont.truetype(font_path, font_size)
+            if font_path is None:
+                _FONT_CACHE[key] = ImageFont.load_default()
+            else:
+                _FONT_CACHE[key] = ImageFont.truetype(font_path, font_size)
         except:
             _FONT_CACHE[key] = ImageFont.load_default()
     return _FONT_CACHE[key]
@@ -53,11 +57,8 @@ def put_text_russian(img, text, org, font_path="arial.ttf", font_size=24, color=
 
 
 def get_font_path():
-    candidates = [
-        "arial.ttf",
-        "C:/Windows/Fonts/arial.ttf",
-        "DejaVuSans.ttf"
-    ]
+    """Возвращает путь к доступному шрифту с кросс-платформенной поддержкой"""
+    candidates = get_font_candidates()
     for path in candidates:
         try:
             from PIL import ImageFont
@@ -65,7 +66,13 @@ def get_font_path():
             return path
         except:
             continue
-    return "arial.ttf"
+    # Fallback к системному шрифту по умолчанию
+    try:
+        from PIL import ImageFont
+        ImageFont.load_default()
+        return None  # Использовать системный шрифт по умолчанию
+    except:
+        return "arial.ttf"  # Последний fallback
 
 
 def align_face_by_kps(frame, kps, output_size=(112, 112)):
@@ -181,10 +188,12 @@ class AsyncFaceProcessor:
         self.show_keypoints = True  # ← Флаг отображения точек
         self.show_hands = False     # ← Флаг отрисовки рук
         self.show_people = False    # ← Флаг отрисовки людей (experiments)
+        self.show_fire = False      # ← Флаг отрисовки пожара/дыма
 
         # Модули для рук и людей (ленивая инициализация)
         self._hand_detector = None
         self._people_detector = None
+        self._fire_detector = None
 
         # Логгер
         self.logger = logging.getLogger(f"camera_{camera_index}")
@@ -213,6 +222,9 @@ class AsyncFaceProcessor:
 
     def set_show_people(self, show: bool):
         self.show_people = show
+
+    def set_show_fire(self, show: bool):
+        self.show_fire = show
 
     def start(self):
         self.thread = threading.Thread(target=self.run, daemon=True)
@@ -314,6 +326,19 @@ class AsyncFaceProcessor:
                     except Exception as e:
                         self.logger.error(f"Hand overlay error: {e}")
 
+                if self.show_fire:
+                    if self._fire_detector is None:
+                        self._fire_detector = EarlyFireDetector()
+                    try:
+                        f_boxes, f_scores, f_labels = self._fire_detector.detect(frame)
+                        for (x1, y1, x2, y2), s, lab in zip(f_boxes, f_scores, f_labels):
+                            color = (0, 140, 255) if lab == "FIRE" else (200, 200, 200)
+                            cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+                            cv2.putText(frame, f"{lab} {float(s):.2f}", (int(x1), max(15, int(y1) - 6)),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                    except Exception as e:
+                        self.logger.error(f"Fire overlay error: {e}")
+
                 frame = put_text_russian(frame, f"FPS: {self.fps:.1f}", (10, 30), font_path=get_font_path(),
                                          font_size=24, color=(255, 255, 255))
                 frame = put_text_russian(frame, f"Источник {self.camera_index + 1}", (10, 70),
@@ -356,17 +381,30 @@ class AsyncFaceProcessor:
 
 # =============== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===============
 def find_available_cameras(max_tested=10):
+    from platform_utils import get_optimal_camera_backends
     available = []
+    backends = get_optimal_camera_backends()
+    
     for i in range(max_tested):
-        cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
-        if cap.isOpened():
-            for _ in range(3):
-                ret, _ = cap.read()
-                if ret:
-                    available.append(i)
+        success = False	
+        for backend in backends:
+            cap = cv2.VideoCapture(i, backend)
+            if cap.isOpened():
+                for _ in range(3):
+                    ret, _ = cap.read()
+                    if ret:
+                        available.append(i)
+                        success = True
+                        break
+                    time.sleep(0.1)
+                cap.release()
+                if success:
                     break
-                time.sleep(0.1)
-        cap.release()
+            cap.release()
+        
+        if success:
+            continue
+    
     return available
 
 
@@ -419,7 +457,9 @@ def main():
         print("❌ Не удалось запустить ни одну камеру")
         return
 
-    print("✅ Система запущена. Горячие клавиши: q — выход, m — точки лица, h — руки, e — люди.")
+    platform_info = get_platform_info()
+    print("✅ Система запущена. Горячие клавиши: q — выход, m — точки лица, h — руки, e — люди, f — пожар.")
+    print(f"📍 Обнаружена платформа: {platform_info['system'].upper()}")
 
     WINDOW_NAME = "Система распознавания лиц"
     cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
@@ -428,6 +468,7 @@ def main():
     show_keypoints = True  # ← ГЛОБАЛЬНЫЕ ФЛАГИ
     show_hands = False
     show_people = False
+    show_fire = False
 
     def on_mouse(event, x, y, flags, userdata=None):
         nonlocal status_text, status_until
@@ -460,6 +501,7 @@ def main():
                 p.set_show_keypoints(show_keypoints)
                 p.set_show_hands(show_hands)
                 p.set_show_people(show_people)
+                p.set_show_fire(show_fire)
 
             # Определяем сетку
             if n == 1:
@@ -540,7 +582,8 @@ def main():
             kp_status = "ВКЛ" if show_keypoints else "ВЫКЛ"
             hands_status = "ВКЛ" if show_hands else "ВЫКЛ"
             people_status = "ВКЛ" if show_people else "ВЫКЛ"
-            combined = put_text_russian(combined, f'Точки: {kp_status} (M)  |  Руки: {hands_status} (H)  |  Люди: {people_status} (E)',
+            fire_status = "ВКЛ" if show_fire else "ВЫКЛ"
+            combined = put_text_russian(combined, f'Точки: {kp_status} (M)  |  Руки: {hands_status} (H)  |  Люди: {people_status} (E)  |  Пожар: {fire_status} (F)',
                                         (10, combined.shape[0] - 30), font_path=get_font_path(), font_size=20, color=(255, 255, 0))
 
             if status_text and time.time() < status_until:
@@ -562,6 +605,9 @@ def main():
             elif key == ord('e') or key == ord('E'):
                 show_people = not show_people
                 print(f"🚶 Люди (experiments): {'ВКЛЮЧЕНО' if show_people else 'ВЫКЛЮЧЕНО'}")
+            elif key == ord('f') or key == ord('F'):
+                show_fire = not show_fire
+                print(f"🔥 Пожар/Дым: {'ВКЛЮЧЕНО' if show_fire else 'ВЫКЛЮЧЕНО'}")
 
     except KeyboardInterrupt:
         system_logger.info("🛑 Получен сигнал прерывания.")

@@ -1,7 +1,13 @@
 # hardware_detection.py
 
 import psutil
-import torch
+from platform_utils import get_platform_info, is_gpu_supported
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 class HardwareLevel:
     CPU_ONLY = "cpu_only"      # AMD / Intel без CUDA
@@ -24,7 +30,10 @@ def get_memory_info():
     return total_gb
 
 def is_nvidia_gpu_available():
-    """Проверяет, доступен ли NVIDIA GPU через CUDA"""
+    """Проверяет, доступен ли NVIDIA GPU через CUDA (устаревшая функция)"""
+    if not TORCH_AVAILABLE:
+        return False, "torch not available"
+    
     try:
         if torch.cuda.is_available() and torch.cuda.device_count() > 0:
             return True, torch.cuda.get_device_name(0)
@@ -33,7 +42,15 @@ def is_nvidia_gpu_available():
     return False, "No NVIDIA GPU"
 
 def estimate_hardware_level():
-    gpu_available, gpu_name = is_nvidia_gpu_available()
+    """Определяет уровень аппаратного оборудования с кросс-платформенной поддержкой"""
+    # Используем новую кросс-платформенную функцию
+    gpu_available, gpu_name = is_gpu_supported()
+    
+    # Также проверяем старую функцию для совместимости
+    if not gpu_available and TORCH_AVAILABLE:
+        old_gpu_available, old_gpu_name = is_nvidia_gpu_available()
+        if old_gpu_available:
+            gpu_available, gpu_name = old_gpu_available, old_gpu_name
 
     if gpu_available:
         level = HardwareLevel.NVIDIA_GPU
@@ -44,7 +61,8 @@ def estimate_hardware_level():
         'cpu_cores_physical': get_cpu_info()['physical_cores'],
         'ram_gb': round(get_memory_info(), 1),
         'gpu_available': gpu_available,
-        'gpu_name': gpu_name
+        'gpu_name': gpu_name,
+        'platform': get_platform_info()['system']
     }
 
     return level, details

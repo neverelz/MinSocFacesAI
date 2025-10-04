@@ -5,15 +5,18 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="6a303638-fe96-4d8a-a9ac-c4d6e35ee9a4" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/scrfd_detection/hands_detection.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/scrfd_detection/people_detection.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/scrfd_detection/pose_detection_templates/experiments.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/scrfd_detection/pose_detection_templates/hands.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/scrfd_detection/pose_detection_templates/mix.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/scrfd_detection/pose_detection_templates/pozzy_holistic.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/scrfd_detection/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/scrfd_detection/INSTALLATION.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/scrfd_detection/fire.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/scrfd_detection/platform_utils.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/scrfd_detection/system_check.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/camera.py" beforeDir="false" afterPath="$PROJECT_DIR$/scrfd_detection/camera.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/scrfd_detection/hardware_detection.py" beforeDir="false" afterPath="$PROJECT_DIR$/scrfd_detection/hardware_detection.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/scrfd_detection/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/scrfd_detection/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/recognizer.py" beforeDir="false" afterPath="$PROJECT_DIR$/scrfd_detection/recognizer.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/scrfd_detection/requirements.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scrfd_detection/saved_embeddings.pkl" beforeDir="false" afterPath="$PROJECT_DIR$/scrfd_detection/saved_embeddings.pkl" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -40,31 +43,35 @@
   &quot;associatedIndex&quot;: 1
 }</component>
   <component name="ProjectId" id="32E9cI1xIdGejcdeotYnn4lyzzu" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Python tests.Doctests in typing_objects.executor": "Run",
-    "Python.camera.executor": "Run",
-    "Python.check_person.executor": "Run",
-    "Python.hands.executor": "Run",
-    "Python.locationing.executor": "Run",
-    "Python.main.executor": "Run",
-    "Python.recognizer.executor": "Run",
-    "Python.test_env.executor": "Run",
-    "Python.vladimir.executor": "Run",
-    "Python.w1.executor": "Run",
-    "Python.yolo11.executor": "Run",
-    "RunOnceActivity.OpenProjectViewOnStart": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
-    "git-widget-placeholder": "katerina",
-    "last_opened_file_path": "C:/Users/belya/Documents/GitHub/MinSocFacesAI/scrfd_detection",
-    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Python tests.Doctests in typing_objects.executor&quot;: &quot;Run&quot;,
+    &quot;Python.camera.executor&quot;: &quot;Run&quot;,
+    &quot;Python.check_person.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fire.executor&quot;: &quot;Run&quot;,
+    &quot;Python.hands.executor&quot;: &quot;Run&quot;,
+    &quot;Python.locationing.executor&quot;: &quot;Run&quot;,
+    &quot;Python.main.executor&quot;: &quot;Run&quot;,
+    &quot;Python.recognizer.executor&quot;: &quot;Run&quot;,
+    &quot;Python.test_env.executor&quot;: &quot;Run&quot;,
+    &quot;Python.vladimir.executor&quot;: &quot;Run&quot;,
+    &quot;Python.w1.executor&quot;: &quot;Run&quot;,
+    &quot;Python.yolo11.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;katerina&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/belya/Documents/GitHub/MinSocFacesAI/scrfd_detection&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="C:\Users\belya\Documents\GitHub\MinSocFacesAI\scrfd_detection" />
@@ -91,5 +98,8 @@
       <updated>1756974943418</updated>
     </task>
     <servers />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <option name="ADD_EXTERNAL_FILES_SILENTLY" value="true" />
   </component>
 </project>

@@ -1,0 +1,67 @@
+# Платформо-специфичные файлы
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Логи и временные файлы
+logs/
+*.log
+*.tmp
+
+# Модели и данные
+faces_database/
+saved_embeddings.pkl
+*.h5
+*.pickle
+
+# Платформо-специфичные файлы сборки
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE файлы
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Операционная система
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows специфичные
+*.lnk
+
+# Linux специфичные
+*fuse_hidden*
+.directory
+.Trash-*
+
+# Конфигурационные файлы (содержат локальные настройки)
+config.local.*
+.env

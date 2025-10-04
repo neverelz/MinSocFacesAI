@@ -1,4 +1,4 @@
-# camera.py — асинхронный захват с логированием
+# camera.py — асинхронный захват с логирование
 
 import cv2
 import threading
@@ -6,10 +6,10 @@ import time
 import os
 import logging
 from queue import Queue, Full, Empty
+from platform_utils import get_optimal_camera_backends, safe_makedirs
 
 # Гарантируем, что папка logs существует (на случай, если запущен отдельно)
-LOG_DIR = "logs"
-os.makedirs(LOG_DIR, exist_ok=True)
+LOG_DIR = safe_makedirs("logs", exist_ok=True)
 
 class AsyncCameraReader:
     def __init__(self, camera_index: int, width: int = 640, height: int = 480, fps: int = 15, queue_size: int = 3):
@@ -34,7 +34,7 @@ class AsyncCameraReader:
             self.logger.setLevel(logging.INFO)
 
     def open(self):
-        backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
+        backends = get_optimal_camera_backends()
         for backend in backends:
             self.cap = cv2.VideoCapture(self.camera_index, backend)
             if not self.cap.isOpened():
