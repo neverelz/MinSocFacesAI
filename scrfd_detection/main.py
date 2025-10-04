@@ -473,13 +473,34 @@ def main():
 
     WINDOW_NAME = "Система распознавания лиц"
     
+    # Создаем тестовое изображение для инициализации окна
+    test_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    test_frame = cv2.putText(test_frame, "Инициализация окна...", (200, 240), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+    
     try:
         cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
-        # Даем время окну создать window handler в Linux
+        # Более длительная инициализация для Linux
+        cv2.imshow(WINDOW_NAME, test_frame)
         cv2.waitKey(1)
+        cv2.resizeWindow(WINDOW_NAME, 800, 600)
+        cv2.waitKey(50)  # Даем дополнительное время на Linux
+        print("✅ GUI окно инициализировано")
     except cv2.error as e:
         print(f"⚠️ Предупреждение при создании окна: {e}")
         print("💡 Убедитесь что дисплей доступен (переменная DISPLAY установлена)")
+        print(f"💡 DISPLAY={os.environ.get('DISPLAY', 'НЕ УСТАНОВЛЕН')}")
+        
+        # Пробуем альтернативные способы
+        print("🔄 Пробуем альтернативную инициализацию...")
+        try:
+            cv2.waitKey(100)  # Больше времени
+            cv2.imshow(WINDOW_NAME, test_frame)
+            cv2.waitKey(100)
+            print("✅ Альтернативная инициализация прошла успешно")
+        except cv2.error as e2:
+            print(f"❌ Альтернативная инициализация тоже не удалась: {e2}")
+            print("❌ GUI режим недоступен на этой системе")
     
     status_text, status_until = "", 0
     current_faces_per_cam = {}
@@ -507,17 +528,8 @@ def main():
                             status_until = time.time() + 1.5
                         return
 
-    # Проверяем что окно создано перед установкой callback
-    window_exists = False
-    try:
-        cv2.setMouseCallback(WINDOW_NAME, on_mouse)
-        window_exists = True
-    except cv2.error as e:
-        print(f"⚠️ Предупреждение при установке мыши callback: {e}")
-        print("💡 Click-функция может не работать на этой платформе")
-    
-    if not window_exists:
-        print("⚠️ Окно не создано или недоступно. Проверьте разрешения дисплея.")
+    # Mouse callback будем устанавливать позже, после первого отображения
+    mouse_callback_set = False
 
     try:
         while True:
@@ -618,8 +630,27 @@ def main():
                 combined = put_text_russian(combined, status_text, (10, 110),
                                             font_path=get_font_path(), font_size=28, color=(0, 255, 255))
 
-            cv2.imshow(WINDOW_NAME, combined)
-            cv2.resizeWindow(WINDOW_NAME, combined.shape[1], combined.shape[0])
+            try:
+                cv2.imshow(WINDOW_NAME, combined)
+                cv2.resizeWindow(WINDOW_NAME, combined.shape[1], combined.shape[0])
+                
+                # Устанавливаем mouse callback после первого успешного отображения
+                if not mouse_callback_set:
+                    try:
+                        cv2.setMouseCallback(WINDOW_NAME, on_mouse)
+                        mouse_callback_set = True
+                        print("✅ Mouse callback установлен")
+                    except cv2.error as e:
+                        print(f"⚠️ Mouse callback не установлен: {e}")
+                        print("💡 Click функции недоступны")
+                
+            except cv2.error as e:
+                print(f"❌ Ошибка отображения: {e}")
+                print("💡 Попробуйте запустить GUI диагностику: python gui_test.py")
+                break
+            
+            # Синхронизация для Linux
+            cv2.waitKey(1)
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q'):
