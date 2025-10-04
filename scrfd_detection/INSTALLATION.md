@@ -47,6 +47,18 @@ pip install -r requirements.txt
 ### Устранение проблем
 - Если не работает камера: `sudo apt install v4l-utils`
 - Для графических интерфейсов: убедитесь что установлены библиотеки OpenGL
+- Если ошибка OpenCV с GUI окнами:
+  ```bash
+  # Проверьте DISPLAY
+  echo $DISPLAY
+  export DISPLAY=:0.0  # если не установлен
+  
+  # Запустите диагностику
+  python opencv_check.py
+  
+  # Установите недостающие пакеты
+  sudo apt install python3-opencv libgl1-mesa-glx libglib2.0-0 libgtk-3-0 x11-apps
+  ```
 
 ## Linux (CentOS/RHEL/Fedora)
 

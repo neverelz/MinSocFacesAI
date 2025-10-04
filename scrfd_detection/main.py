@@ -410,6 +410,16 @@ def find_available_cameras(max_tested=10):
 
 # =============== ОСНОВНАЯ ФУНКЦИЯ ===============
 def main():
+    platform_info = get_platform_info()
+    
+    # Проверка для Linux систем
+    if platform_info['is_linux']:
+        display_var = os.environ.get('DISPLAY')
+        if not display_var:
+            print("⚠️ Переменная DISPLAY не установлена. Убедитесь что запущена X11 или Wayland.")
+            print("💡 Для headless режима можно использовать SSH с X11 forwarding")
+        print("🐧 Linux система обнаружена - убедитесь что установлены необходимые библиотеки.")
+    
     estimated_level, details = estimate_hardware_level()
 
     if estimated_level == "nvidia_gpu":
@@ -462,7 +472,15 @@ def main():
     print(f"📍 Обнаружена платформа: {platform_info['system'].upper()}")
 
     WINDOW_NAME = "Система распознавания лиц"
-    cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+    
+    try:
+        cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+        # Даем время окну создать window handler в Linux
+        cv2.waitKey(1)
+    except cv2.error as e:
+        print(f"⚠️ Предупреждение при создании окна: {e}")
+        print("💡 Убедитесь что дисплей доступен (переменная DISPLAY установлена)")
+    
     status_text, status_until = "", 0
     current_faces_per_cam = {}
     show_keypoints = True  # ← ГЛОБАЛЬНЫЕ ФЛАГИ
@@ -489,7 +507,17 @@ def main():
                             status_until = time.time() + 1.5
                         return
 
-    cv2.setMouseCallback(WINDOW_NAME, on_mouse)
+    # Проверяем что окно создано перед установкой callback
+    window_exists = False
+    try:
+        cv2.setMouseCallback(WINDOW_NAME, on_mouse)
+        window_exists = True
+    except cv2.error as e:
+        print(f"⚠️ Предупреждение при установке мыши callback: {e}")
+        print("💡 Click-функция может не работать на этой платформе")
+    
+    if not window_exists:
+        print("⚠️ Окно не создано или недоступно. Проверьте разрешения дисплея.")
 
     try:
         while True:
