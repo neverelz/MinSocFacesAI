@@ -1,0 +1,11 @@
+pandas>=1.3
+tqdm
+requests
+Pillow
+opencv-python
+numpy
+pycocotools
+shapely
+aiohttp
+aiodns
+async-timeout
