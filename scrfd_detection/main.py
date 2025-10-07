@@ -1,13 +1,14 @@
-# main.py — исправленная версия с поддержкой Windows/Linux
+# main.py — исправленная версия для Windows и Linux
 import cv2
 import time
 import numpy as np
 import threading
 import os
 import logging
+import shutil
 from queue import Queue, Full, Empty
 from detection import FaceDetector
-from recognizer import FaceRecognizer
+from recognizer import FaceRecognizer, DATABASE_DIR, EMBEDDINGS_FILE
 from camera import AsyncCameraReader
 from hardware_detection import estimate_hardware_level, get_optimal_settings
 from hands_detection import MultiHandDetector
@@ -385,24 +386,35 @@ def main():
     auto_clear = input("Очистить базу лиц? (y/N): ").strip().lower() in ("y", "yes", "д", "да")
     system_logger.info(f"Запуск: уровень={estimated_level}, очистка={auto_clear}")
 
-    detector = FaceDetector(
-        model_name='scrfd_10g_kps',
-        use_gpu=settings['use_gpu'],
-        det_size=settings['det_size']
-    )
+    # === ОЧИСТКА БАЗЫ ДО ИНИЦИАЛИЗАЦИИ РАСПОЗНАВАТЕЛЯ ===
     if auto_clear:
         print("🧹 Очистка базы лиц и кэша...")
-        from recognizer import DATABASE_DIR, EMBEDDINGS_FILE
-        import shutil
         if os.path.exists(DATABASE_DIR):
             shutil.rmtree(DATABASE_DIR)
         if os.path.exists(EMBEDDINGS_FILE):
             os.remove(EMBEDDINGS_FILE)
         print("✅ База и кэш удалены")
 
-    # Теперь создаём распознаватель БЕЗ force_rebuild — он сам создаст пустую базу
-    recognizer = FaceRecognizer(force_rebuild=False, use_gpu=settings['use_gpu'])
+    # === ИНИЦИАЛИЗАЦИЯ GUI ДО ТЯЖЁЛЫХ ОПЕРАЦИЙ ===
+    WINDOW_NAME = "Система распознавания лиц"
+    test_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    test_frame = put_text_russian(test_frame, "Инициализация...", (150, 240),
+                                  font_path=get_font_path(), font_size=28, color=(255, 255, 255))
+    cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+    cv2.imshow(WINDOW_NAME, test_frame)
+    cv2.resizeWindow(WINDOW_NAME, 800, 600)
+    # ДАЁМ ВРЕМЯ НА ИНИЦИАЛИЗАЦИЮ (особенно важно для Linux/Qt)
+    for _ in range(5):
+        cv2.waitKey(30)
+    print("✅ GUI окно инициализировано")
 
+    # === ИНИЦИАЛИЗАЦИЯ МОДЕЛЕЙ ===
+    detector = FaceDetector(
+        model_name='scrfd_10g_kps',
+        use_gpu=settings['use_gpu'],
+        det_size=settings['det_size']
+    )
+    recognizer = FaceRecognizer(force_rebuild=False, use_gpu=settings['use_gpu'])
     saver = GlobalFaceSaver(recognizer, save_interval_sec=2.0)
 
     print("🔍 Поиск камер...")
@@ -410,6 +422,7 @@ def main():
     print(f"🎥 Найдены камеры: {camera_indices}")
     if not camera_indices:
         print("❌ Камеры не найдены")
+        cv2.destroyAllWindows()
         return
 
     camera_readers, processors = [], []
@@ -417,30 +430,20 @@ def main():
         reader = AsyncCameraReader(idx, settings['camera_width'], settings['camera_height'], settings['camera_fps'])
         if reader.start():
             camera_readers.append(reader)
-            time.sleep(1.0)  # увеличена пауза для стабильности
+            time.sleep(0.5)
             processor = AsyncFaceProcessor(idx, detector, recognizer, saver, settings)
             processor.start()
             processors.append(processor)
 
     if not processors:
         print("❌ Не удалось запустить ни одну камеру")
+        cv2.destroyAllWindows()
         return
 
-    platform_info = get_platform_info()
     print("✅ Система запущена. Горячие клавиши: q — выход, m — точки лица, h — руки, e — люди, f — пожар.")
     print(f"📍 Обнаружена платформа: {platform_info['system'].upper()}")
 
-    WINDOW_NAME = "Система распознавания лиц"
-    test_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-    test_frame = cv2.putText(test_frame, "Инициализация окна...", (200, 240),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-
-    cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
-    cv2.imshow(WINDOW_NAME, test_frame)
-    cv2.waitKey(100)  # даём время на инициализацию
-    cv2.resizeWindow(WINDOW_NAME, 800, 600)
-    print("✅ GUI окно инициализировано")
-
+    # === MOUSE CALLBACK ===
     status_text, status_until = "", 0
     current_faces_per_cam = {}
     show_keypoints = True
@@ -467,7 +470,14 @@ def main():
                             status_until = time.time() + 1.5
                         return
 
-    mouse_callback_set = False
+    # Устанавливаем callback ПОСЛЕ инициализации окна
+    try:
+        cv2.setMouseCallback(WINDOW_NAME, on_mouse)
+        print("✅ Mouse callback установлен")
+        mouse_callback_set = True
+    except cv2.error as e:
+        print(f"⚠️ Mouse callback не установлен: {e}")
+        mouse_callback_set = False
 
     try:
         while True:
@@ -567,16 +577,7 @@ def main():
             cv2.imshow(WINDOW_NAME, combined)
             cv2.resizeWindow(WINDOW_NAME, combined.shape[1], combined.shape[0])
 
-            if not mouse_callback_set:
-                try:
-                    cv2.setMouseCallback(WINDOW_NAME, on_mouse)
-                    mouse_callback_set = True
-                    print("✅ Mouse callback установлен")
-                except cv2.error as e:
-                    print(f"⚠️ Mouse callback не установлен: {e}")
-                    print("💡 Click функции недоступны")
-
-            key = cv2.waitKey(1) & 0xFF  # ← ЕДИНСТВЕННЫЙ waitKey
+            key = cv2.waitKey(1) & 0xFF
             if key == ord('q'):
                 break
             elif key in (ord('m'), ord('M')):
