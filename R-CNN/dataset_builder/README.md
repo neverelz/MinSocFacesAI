@@ -87,12 +87,8 @@ Fixed filenames in annotations: 157 — в 157 записях COCO мы обно
 переписывает аннотации и объеденяет все датасеты в 1, и разделяя на train, val и test
 ----------------------------------------------------------------------------
 Запуск [merge_coco.py]
-python -u R-CNN/dataset_builder/scripts/merge_coco.py `
-  --extracted /home/user/_extracted `
-  --out /home/user/mrg `
-  --mode unified --split 0.8 0.1 0.1 `
-  --map R-CNN/dataset_builder/configs/class_map.json `
-  --dedup --task detection --short-names --verbose `
+
+python -u R-CNN/dataset_builder/scripts/merge_coco.py --extracted /home/user/_extracted --out /home/user/mrgv2 --mode unified --split 0.8 0.1 0.1 --map R-CNN/dataset_builder/configs/class_map_old.json --dedup --task detection --short-names --verbose 
 
 =================================================================================
 Далее аудит с помощью [audit_coco_dataset.py]
