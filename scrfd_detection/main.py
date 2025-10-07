@@ -1,14 +1,13 @@
-# main.py — финальная кросс-платформенная версия с поддержкой Linux (Qt backend)
+# main.py — с поддержкой обнаружения опасных предметов в руках
 import cv2
 import time
 import numpy as np
 import threading
 import os
 import logging
-import shutil
 from queue import Queue, Full, Empty
 from detection import FaceDetector
-from recognizer import FaceRecognizer, DATABASE_DIR, EMBEDDINGS_FILE
+from recognizer import FaceRecognizer
 from camera import AsyncCameraReader
 from hardware_detection import estimate_hardware_level, get_optimal_settings
 from hands_detection import MultiHandDetector
@@ -16,6 +15,14 @@ from people_detection import HybridPeopleDetector
 from fire import EarlyFireDetector
 from platform_utils import get_font_candidates, normalize_path, safe_makedirs, get_platform_info
 from PIL import Image, ImageDraw
+
+# === НОВЫЙ ИМПОРТ ===
+try:
+    from object_in_hand import DangerousObjectInHandDetector
+    OBJECT_DETECTION_AVAILABLE = True
+except Exception as e:
+    print(f"⚠️ Модуль object_in_hand недоступен: {e}")
+    OBJECT_DETECTION_AVAILABLE = False
 
 # === ЛОГИРОВАНИЕ ===
 LOG_DIR = safe_makedirs("logs", exist_ok=True)
@@ -173,6 +180,8 @@ class AsyncFaceProcessor:
         self.show_hands = False
         self.show_people = False
         self.show_fire = False
+        self.show_dangerous_objects = False
+        self._dangerous_object_detector = None
         self._hand_detector = None
         self._people_detector = None
         self._fire_detector = None
@@ -191,6 +200,9 @@ class AsyncFaceProcessor:
         self.last_fps_time = time.time()
         self.processed_count = 0
 
+    def set_show_dangerous_objects(self, show: bool):
+        self.show_dangerous_objects = show
+
     def set_show_keypoints(self, show: bool):
         self.show_keypoints = show
 
@@ -202,6 +214,9 @@ class AsyncFaceProcessor:
 
     def set_show_fire(self, show: bool):
         self.show_fire = show
+
+    def set_show_dangerous_objects(self, show: bool):
+        self.show_dangerous_objects = show
 
     def start(self):
         self.thread = threading.Thread(target=self.run, daemon=True)
@@ -269,6 +284,33 @@ class AsyncFaceProcessor:
                                     if 0 <= pt[0] < frame.shape[1] and 0 <= pt[1] < frame.shape[0]:
                                         cv2.circle(frame, (pt[0], pt[1]), 3, (255, 0, 0), -1)
 
+                hand_boxes_for_iou = []
+                if self.show_hands:
+                    if self._hand_detector is None:
+                        self._hand_detector = MultiHandDetector(max_hands=6)
+                    try:
+                        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        work_frame = cv2.flip(rgb_frame, 1) if self._hand_detector.mirror_view else rgb_frame
+                        hand_results = self._hand_detector.hands.process(work_frame)
+                        if hand_results.multi_hand_landmarks:
+                            h, w = frame.shape[:2]
+                            for landmarks in hand_results.multi_hand_landmarks:
+                                x_vals = [lm.x for lm in landmarks.landmark]
+                                y_vals = [lm.y for lm in landmarks.landmark]
+                                x_min, x_max = min(x_vals), max(x_vals)
+                                y_min, y_max = min(y_vals), max(y_vals)
+                                if self._hand_detector.mirror_view:
+                                    x_min, x_max = 1 - x_max, 1 - x_min
+                                box = [
+                                    int(x_min * w), int(y_min * h),
+                                    int(x_max * w), int(y_max * h)
+                                ]
+                                hand_boxes_for_iou.append(box)
+                        # Отрисовка рук
+                        frame, _, _ = self._hand_detector.detect_hands(frame)
+                    except Exception as e:
+                        self.logger.error(f"Hand detection error: {e}")
+
                 if self.show_people:
                     if self._people_detector is None:
                         self._people_detector = HybridPeopleDetector()
@@ -280,14 +322,6 @@ class AsyncFaceProcessor:
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 200, 0), 1)
                     except Exception as e:
                         self.logger.error(f"People overlay error: {e}")
-
-                if self.show_hands:
-                    if self._hand_detector is None:
-                        self._hand_detector = MultiHandDetector(max_hands=6)
-                    try:
-                        frame, _, _ = self._hand_detector.detect_hands(frame)
-                    except Exception as e:
-                        self.logger.error(f"Hand overlay error: {e}")
 
                 if self.show_fire:
                     if self._fire_detector is None:
@@ -301,6 +335,46 @@ class AsyncFaceProcessor:
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
                     except Exception as e:
                         self.logger.error(f"Fire overlay error: {e}")
+
+                # === ОПАСНЫЕ ПРЕДМЕТЫ В РУКАХ ===
+                hand_boxes_for_iou = []
+                if self.show_hands and self._hand_detector is not None:
+                    # Получаем bounding boxes рук из ключевых точек
+                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    work_frame = cv2.flip(rgb_frame, 1) if self._hand_detector.mirror_view else rgb_frame
+                    hand_results = self._hand_detector.hands.process(work_frame)
+                    if hand_results.multi_hand_landmarks:
+                        h, w = frame.shape[:2]
+                        for landmarks in hand_results.multi_hand_landmarks:
+                            x_vals = [lm.x for lm in landmarks.landmark]
+                            y_vals = [lm.y for lm in landmarks.landmark]
+                            x_min, x_max = min(x_vals), max(x_vals)
+                            y_min, y_max = min(y_vals), max(y_vals)
+                            if self._hand_detector.mirror_view:
+                                x_min, x_max = 1 - x_max, 1 - x_min
+                            box = [
+                                int(x_min * w), int(y_min * h),
+                                int(x_max * w), int(y_max * h)
+                            ]
+                            hand_boxes_for_iou.append(box)
+
+                if self.show_dangerous_objects and OBJECT_DETECTION_AVAILABLE:
+                    if self._dangerous_object_detector is None:
+                        self._dangerous_object_detector = DangerousObjectInHandDetector(
+                            use_gpu=self.detector.use_gpu
+                        )
+                    try:
+                        dangerous_objects = self._dangerous_object_detector.get_dangerous_objects_in_hand(
+                            frame, hand_boxes_for_iou, iou_threshold=0.1
+                        )
+                        for obj in dangerous_objects:
+                            x1, y1, x2, y2 = map(int, obj['bbox'])
+                            color = (0, 0, 255) if obj['type'] == 'handheld' else (0, 165, 255)
+                            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                            label = f"{obj['name']} ⚠️" if obj['type'] == 'handheld' else f"{obj['name']} (поднят)"
+                            cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                    except Exception as e:
+                        self.logger.error(f"Dangerous object detection error: {e}")
 
                 frame = put_text_russian(frame, f"FPS: {self.fps:.1f}", (10, 30), font_path=get_font_path(),
                                          font_size=24, color=(255, 255, 255))
@@ -389,13 +463,15 @@ def main():
     # === ОЧИСТКА БАЗЫ ДО ИНИЦИАЛИЗАЦИИ МОДЕЛЕЙ ===
     if auto_clear:
         print("🧹 Очистка базы лиц и кэша...")
+        from recognizer import DATABASE_DIR, EMBEDDINGS_FILE
+        import shutil
         if os.path.exists(DATABASE_DIR):
             shutil.rmtree(DATABASE_DIR)
         if os.path.exists(EMBEDDINGS_FILE):
             os.remove(EMBEDDINGS_FILE)
         print("✅ База и кэш удалены")
 
-    # === ИНИЦИАЛИЗАЦИЯ GUI ОКНА (до тяжёлых операций) ===
+    # === ИНИЦИАЛИЗАЦИЯ GUI ===
     WINDOW_NAME = "Система распознавания лиц"
     test_frame = np.zeros((480, 640, 3), dtype=np.uint8)
     test_frame = put_text_russian(test_frame, "Инициализация...", (150, 240),
@@ -403,14 +479,10 @@ def main():
     cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
     cv2.imshow(WINDOW_NAME, test_frame)
     cv2.resizeWindow(WINDOW_NAME, 800, 600)
-
-    # 🔥 КРИТИЧЕСКИ ВАЖНО: дать GUI время инициализироваться (особенно для Qt на Linux)
     for _ in range(10):
-        cv2.waitKey(20)  # ~200 мс
-
+        cv2.waitKey(20)
     print("✅ GUI окно полностью инициализировано")
 
-    # === ИНИЦИАЛИЗАЦИЯ МОДЕЛЕЙ ===
     detector = FaceDetector(
         model_name='scrfd_10g_kps',
         use_gpu=settings['use_gpu'],
@@ -442,16 +514,16 @@ def main():
         cv2.destroyAllWindows()
         return
 
-    print("✅ Система запущена. Горячие клавиши: q — выход, m — точки лица, h — руки, e — люди, f — пожар.")
+    print("✅ Система запущена. Горячие клавиши: q — выход, m — точки лица, h — руки, e — люди, f — пожар, d — опасные предметы.")
     print(f"📍 Обнаружена платформа: {platform_info['system'].upper()}")
 
-    # === MOUSE CALLBACK (устанавливаем ОДИН РАЗ после инициализации окна) ===
     status_text, status_until = "", 0
     current_faces_per_cam = {}
     show_keypoints = True
     show_hands = False
     show_people = False
     show_fire = False
+    show_dangerous_objects = False
 
     def on_mouse(event, x, y, flags, userdata=None):
         nonlocal status_text, status_until
@@ -472,15 +544,12 @@ def main():
                             status_until = time.time() + 1.5
                         return
 
-    # Устанавливаем callback ОДИН РАЗ
     try:
         cv2.setMouseCallback(WINDOW_NAME, on_mouse)
         print("✅ Mouse callback успешно установлен")
     except cv2.error as e:
-        print(f"⚠️ Mouse callback недоступен даже после инициализации: {e}")
-        print("💡 Убедитесь, что DISPLAY установлен и OpenCV собран с поддержкой GUI")
+        print(f"⚠️ Mouse callback недоступен: {e}")
 
-    # === ОСНОВНОЙ ЦИКЛ ===
     try:
         while True:
             n = len(processors)
@@ -492,6 +561,7 @@ def main():
                 p.set_show_hands(show_hands)
                 p.set_show_people(show_people)
                 p.set_show_fire(show_fire)
+                p.set_show_dangerous_objects(show_dangerous_objects)
 
             if n == 1:
                 rows, cols = 1, 1
@@ -569,8 +639,11 @@ def main():
             hands_status = "ВКЛ" if show_hands else "ВЫКЛ"
             people_status = "ВКЛ" if show_people else "ВЫКЛ"
             fire_status = "ВКЛ" if show_fire else "ВЫКЛ"
-            combined = put_text_russian(combined, f'Точки: {kp_status} (M)  |  Руки: {hands_status} (H)  |  Люди: {people_status} (E)  |  Пожар: {fire_status} (F)',
-                                        (10, combined.shape[0] - 30), font_path=get_font_path(), font_size=20, color=(255, 255, 0))
+            danger_status = "ВКЛ" if show_dangerous_objects else "ВЫКЛ"
+            combined = put_text_russian(combined,
+                f'Точки: {kp_status} (M) | Руки: {hands_status} (H) | Люди: {people_status} (E) | '
+                f'Пожар: {fire_status} (F) | Опасные: {danger_status} (D)',
+                (10, combined.shape[0] - 30), font_path=get_font_path(), font_size=20, color=(255, 255, 0))
 
             if status_text and time.time() < status_until:
                 combined = put_text_russian(combined, status_text, (10, 110),
@@ -594,6 +667,12 @@ def main():
             elif key in (ord('f'), ord('F')):
                 show_fire = not show_fire
                 print(f"🔥 Пожар/Дым: {'ВКЛЮЧЕНО' if show_fire else 'ВЫКЛЮЧЕНО'}")
+            elif key in (ord('d'), ord('D')):
+                if OBJECT_DETECTION_AVAILABLE:
+                    show_dangerous_objects = not show_dangerous_objects
+                    print(f"⚠️ Опасные предметы в руках: {'ВКЛЮЧЕНО' if show_dangerous_objects else 'ВЫКЛЮЧЕНО'}")
+                else:
+                    print("❌ Модуль object_in_hand не доступен")
 
     except KeyboardInterrupt:
         system_logger.info("🛑 Получен сигнал прерывания.")

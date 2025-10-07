@@ -3,7 +3,7 @@ import mediapipe as mp
 import numpy as np
 
 class MultiHandDetector:
-    def __init__(self, max_hands=6, mirror_view=True):
+    def __init__(self, max_hands=6, mirror_view=False):
         self.mp_hands = mp.solutions.hands
         self.mp_drawing = mp.solutions.drawing_utils
         self.mp_drawing_styles = mp.solutions.drawing_styles
