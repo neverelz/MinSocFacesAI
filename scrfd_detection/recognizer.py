@@ -1,5 +1,4 @@
 # recognizer.py
-
 import os
 import cv2
 import numpy as np
@@ -20,25 +19,21 @@ class FaceRecognizer:
         self.db_dir = db_dir
         self.cache_file = cache_file
         self.use_gpu = use_gpu
-
         # Настройка TensorFlow под CPU/GPU
         if not use_gpu:
             os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # Отключаем GPU для TF
             import tensorflow as tf
             tf.config.set_visible_devices([], 'GPU')
-            # Оптимизация для CPU
-            tf.config.threading.set_intra_op_parallelism_threads(0)  # auto
+            tf.config.threading.set_intra_op_parallelism_threads(0)
             tf.config.threading.set_inter_op_parallelism_threads(0)
 
         if not os.path.exists(model_path):
-            # Попробуем найти модель в других возможных местах
             alternative_paths = [
                 os.path.join(os.path.dirname(__file__), 'checkpoints', 'GN_W1.3_S1_ArcFace_epoch46.h5'),
                 os.path.join(os.path.dirname(__file__), '..', 'checkpoints', 'GN_W1.3_S1_ArcFace_epoch46.h5'),
                 '../checkpoints/GN_W1.3_S1_ArcFace_epoch46.h5',
                 './checkpoints/GN_W1.3_S1_ArcFace_epoch46.h5'
             ]
-            
             for alt_path in alternative_paths:
                 alt_path = normalize_path(alt_path)
                 if os.path.exists(alt_path):
@@ -51,7 +46,6 @@ class FaceRecognizer:
         self.model = load_model(model_path)
         print("✅ Модель распознавания загружена")
 
-        # Тест
         test_input = np.random.rand(1, 112, 112, 3).astype(np.float32) / 255.0
         test_emb = self.model.predict(test_input, verbose=0)
         if np.any(np.isnan(test_emb)) or np.allclose(test_emb, 0):
@@ -80,6 +74,7 @@ class FaceRecognizer:
                     return pickle.load(f)
                 except:
                     pass
+
         db_dir = safe_makedirs(db_dir, exist_ok=True)
         database = {}
         for person_name in os.listdir(db_dir):
@@ -98,6 +93,7 @@ class FaceRecognizer:
                 embeddings.append(embedding)
             if embeddings:
                 database[person_name] = embeddings
+
         with open(cache_file, 'wb') as f:
             pickle.dump(database, f)
         return database
@@ -123,13 +119,10 @@ class FaceRecognizer:
     def recognize_batch(self, face_imgs):
         if not face_imgs:
             return [], []
-
-        # Подготовка батча
         processed = np.stack([self.preprocess(img) for img in face_imgs])
         embs = self.model.predict(processed, verbose=0).astype(np.float32)
         norms = np.linalg.norm(embs, axis=1, keepdims=True) + 1e-8
         embs /= norms
-
         if self._all_embeddings.size == 0:
             return ["Неизвестно"] * len(face_imgs), [0.0] * len(face_imgs)
 
@@ -148,10 +141,11 @@ class FaceRecognizer:
         return names, sims
 
     def get_next_person_id(self) -> str:
-        DATABASE_DIR = safe_makedirs(DATABASE_DIR, exist_ok=True)
+        global DATABASE_DIR  # ← ИСПРАВЛЕНО: добавлено global
+        db_dir = safe_makedirs(DATABASE_DIR, exist_ok=True)
         max_id = 0
-        for name in os.listdir(DATABASE_DIR):
-            if os.path.isdir(os.path.join(DATABASE_DIR, name)) and name.isdigit():
+        for name in os.listdir(db_dir):
+            if os.path.isdir(os.path.join(db_dir, name)) and name.isdigit():
                 try:
                     max_id = max(max_id, int(name))
                 except:
@@ -159,7 +153,7 @@ class FaceRecognizer:
         return str(max_id + 1)
 
     def _get_next_image_index(self, person_id: str) -> int:
-        person_dir = os.path.join(DATABASE_DIR, person_id)
+        person_dir = os.path.join(self.db_dir, person_id)
         if not os.path.exists(person_dir):
             return 1
         existing = [f for f in os.listdir(person_dir) if f.lower().endswith(('.jpg', '.png'))]
@@ -173,19 +167,16 @@ class FaceRecognizer:
         return max(nums) + 1 if nums else 1
 
     def add_image_to_person(self, person_id: str, face_img_bgr: np.ndarray) -> str:
-        person_dir = safe_makedirs(os.path.join(DATABASE_DIR, person_id), exist_ok=True)
+        person_dir = safe_makedirs(os.path.join(self.db_dir, person_id), exist_ok=True)
         idx = self._get_next_image_index(person_id)
         filepath = os.path.join(person_dir, f"{idx:03d}.jpg")
         cv2.imwrite(filepath, face_img_bgr)
-
         processed = self.preprocess(face_img_bgr)
         embedding = self.model.predict(np.expand_dims(processed, axis=0), verbose=0)[0]
         embedding = self.l2_normalize(embedding)
-
         if person_id not in self.database:
             self.database[person_id] = []
         self.database[person_id].append(embedding)
-
         if self._all_embeddings.size == 0:
             self._all_embeddings = embedding.reshape(1, -1).astype(np.float32)
             self._all_labels = [person_id]
@@ -196,8 +187,7 @@ class FaceRecognizer:
             self._all_embeddings = np.vstack([self._all_embeddings, embedding.astype(np.float32)])
             self._all_labels.append(person_id)
             self._label_to_indices[person_id].append(new_idx)
-
-        with open(EMBEDDINGS_FILE, 'wb') as f:
+        with open(self.cache_file, 'wb') as f:
             pickle.dump(self.database, f)
         return filepath
 
