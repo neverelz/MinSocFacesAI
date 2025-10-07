@@ -3,12 +3,12 @@
 """
 train_fcos.py  (коммерчески чистая версия)
 
-Архитектура: RetinaNet R50-FPN (Detectron2 0.6) с инициализацией бэкбона
-лицензионно-чистыми весами из torchvision (ResNet50 ImageNet1K_V2, BSD-3).
-FCOS не используем (в Detectron2 0.6 нет стабильного FCOS), зато сохраняем
-весь функционал: онлайн-аугментации, RepeatFactorSampler, мульти-скейл,
-прогресс/ETA, периодическая валидация, сейф-чекпоинты, замер P95/FPS,
-обработка ошибок, пауза/возобновление обучения.
+Цель: FCOS R50-FPN с инициализацией бэкбона лицензией BSD-3 (torchvision
+ResNet50 ImageNet1K_V2). Если текущая версия detectron2 не поддерживает FCOS,
+включается фолбэк на RetinaNet R50-FPN при сохранении функционала: онлайн-
+аугментации, RepeatFactorSampler, мульти-скейл, прогресс/ETA, периодическая
+валидация, сейф-чекпоинты, замер P95/FPS, обработка ошибок и пауза/возобнов-
+ление обучения. Веса Detectron2 COCO не используются (коммерческая чистота).
 
 Запуск (пример):
   python R-CNN/FCOS/train_fcos.py \
@@ -44,6 +44,19 @@ from typing import List, Tuple, Any
 import numpy as np
 import torch
 import cv2
+from yacs.config import CfgNode as CN
+
+# --- Pillow shim: фиксы для Pillow>=10 (совместимость с детектроновскими аугментациями)
+try:
+    from PIL import Image as _PIL_Image
+    if not hasattr(_PIL_Image, "LINEAR"):
+        if hasattr(_PIL_Image, "BILINEAR"):
+            _PIL_Image.LINEAR = _PIL_Image.BILINEAR
+        else:
+            from PIL.Image import Resampling
+            _PIL_Image.LINEAR = Resampling.BILINEAR
+except Exception:
+    pass
 
 # Detectron2
 from detectron2.config import get_cfg
@@ -56,7 +69,93 @@ from detectron2.data import transforms as T
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
 from detectron2.data import build_detection_test_loader
 from detectron2.utils.logger import setup_logger
+from detectron2.structures import ImageList
 
+
+# Регистрация AdelaiDet (если установлен) — до сборки модели
+try:
+    import importlib
+    import adet  # noqa: F401
+    # Явная подгрузка FCOS, чтобы зарегистрировать META_ARCH
+    importlib.import_module("adet.modeling.fcos.fcos")
+except Exception:
+    pass
+
+# ---------- FCOS shim meta-arch (совместимость с Detectron2 0.6) ----------
+try:
+    from detectron2.modeling import META_ARCH_REGISTRY, build_backbone
+    import importlib
+    _adet_fcos_mod = importlib.import_module("adet.modeling.fcos.fcos")
+
+    if not hasattr(_adet_fcos_mod, "FCOS"):
+        _adet_fcos_mod = None
+
+    # Зарегистрируем совместимую оболочку, если нет корректного FCOSDetector
+    need_register_shim = False
+    try:
+        META_ARCH_REGISTRY.get("FCOSDetector")
+    except KeyError:
+        need_register_shim = _adet_fcos_mod is not None
+
+    if need_register_shim:
+        import torch.nn as nn
+
+        @META_ARCH_REGISTRY.register()
+        class FCOSDetector(nn.Module):  # noqa: N801 - имя для реестра (старый, может быть переопределён)
+            def __init__(self, cfg):
+                super().__init__()
+                # Построим бэкбон, получим его выходные формы
+                self.backbone = build_backbone(cfg)
+                input_shape = self.backbone.output_shape()
+
+                # Синхронизируем IN_FEATURES/STRIDES/SIZES_OF_INTEREST с реально доступными уровнями
+                desired = ["p3", "p4", "p5", "p6", "p7"]
+                available = [k for k in input_shape.keys() if k.startswith("p")]
+                # Сохраним порядок по номеру пирамиды
+                def _p_level(s):
+                    try:
+                        return int(s[1:])
+                    except Exception:
+                        return 0
+                available = sorted(available, key=_p_level)
+                in_feats = [l for l in desired if l in available] or available
+
+                cfg.MODEL.FCOS.IN_FEATURES = in_feats
+                # Подберём соответствующие страйды
+                stride_map = {"p2": 4, "p3": 8, "p4": 16, "p5": 32, "p6": 64, "p7": 128}
+                cfg.MODEL.FCOS.FPN_STRIDES = [stride_map.get(l, 8) for l in in_feats]
+                # Сократим интервалы интереса под количество уровней (3 или 5)
+                full_soi = [[-1, 64], [64, 128], [128, 256], [256, 512], [512, 999999]]
+                cfg.MODEL.FCOS.SIZES_OF_INTEREST = full_soi[: len(in_feats)]
+
+                # Инициализируем оригинальный FCOS с нужной сигнатурой
+                self.model = _adet_fcos_mod.FCOS(cfg, input_shape)
+
+                # Нормализация изображений
+                import torch
+                pixel_mean = torch.Tensor(cfg.MODEL.PIXEL_MEAN).view(-1, 1, 1)
+                pixel_std = torch.Tensor(cfg.MODEL.PIXEL_STD).view(-1, 1, 1)
+                self.register_buffer("pixel_mean", pixel_mean, persistent=False)
+                self.register_buffer("pixel_std", pixel_std, persistent=False)
+                self.device = torch.device(cfg.MODEL.DEVICE)
+                self.to(self.device)
+
+            def forward(self, batched_inputs):
+                # Извлекаем тензоры изображений, нормализуем и формируем ImageList
+                images = [x["image"].to(self.device) for x in batched_inputs]
+                images = [(img - self.pixel_mean) / self.pixel_std for img in images]
+                images = ImageList.from_tensors(images, self.backbone.size_divisibility)
+                # Получаем пирамиду признаков
+                features = self.backbone(images.tensor)
+                # Вызов FCOS: эта версия ожидает features и batched_inputs
+                return self.model(features, batched_inputs)
+
+        # Регистрируем шиму с уникальным именем и явным использованием нового forward
+        @META_ARCH_REGISTRY.register()
+        class FCOSDetectorShim(FCOSDetector):  # noqa: N801
+            pass
+except Exception:
+    pass
 
 # ---------- utils ----------
 
@@ -97,6 +196,56 @@ def mapper_with_augs(dataset_dict):
         "instances": utils.annotations_to_instances(annos, image.shape[:2])
     }
 
+
+
+
+# ---------- FCOS config defaults ----------
+
+def _fill_missing_fcos_keys(cfg):
+    f = cfg.MODEL.FCOS
+    # Библиотека AdelaiDet ожидает ряд ключей в cfg.MODEL.FCOS — заполним дефолтами
+    defaults = {
+        "IN_FEATURES": ["p3", "p4", "p5", "p6", "p7"],
+        "FPN_STRIDES": [8, 16, 32, 64, 128],
+        "SIZES_OF_INTEREST": [[-1, 64], [64, 128], [128, 256], [256, 512], [512, 999999]],
+        "INFERENCE_TH": 0.3,
+        "INFERENCE_TH_TEST": 0.3,
+        "INFERENCE_TH_TRAIN": 0.05,
+        "NMS_TH": 0.6,
+        "PRIOR_PROB": 0.01,
+        "LOSS_ALPHA": 0.25,
+        "LOSS_GAMMA": 2.0,
+        "LOC_LOSS_TYPE": "giou",
+        "PRE_NMS_TOPK_TRAIN": 2000,
+        "PRE_NMS_TOPK_TEST": 1000,
+        "POST_NMS_TOPK_TRAIN": 1000,
+        "POST_NMS_TOPK_TEST": 1000,
+        "THRESH_WITH_CTR": False,
+        "CENTERNESS_ON_REG": False,
+        "BOX_QUALITY": "centerness",
+        "CENTER_SAMPLE": True,
+        "POS_RADIUS": 1.5,
+        "YIELD_PROPOSAL": False,
+        "YIELD_BOX_FEATURES": False,
+        "USE_DEFORMABLE": False,
+        "DEFORMABLE_GROUPS": 1,
+        "NUM_CLS_CONVS": 4,
+        "NUM_BOX_CONVS": 4,
+        "NUM_SHARE_CONVS": 0,
+        "USE_SCALE": True,
+        "LOSS_NORMALIZER_CLS": "fg",
+        "LOSS_NORMALIZER_BOX": "fg",
+        "LOSS_WEIGHT_CLS": 1.0,
+        "LOSS_WEIGHT_BOX": 1.0,
+        "LOSS_WEIGHT_CTR": 1.0,
+        "CLS_LOSS_NORMALIZER": "fg",       # allowed: moving_fg | fg | all
+        "BOX_LOSS_NORMALIZER": "fg",
+        "CTR_LOSS_NORMALIZER": "fg",
+        "NORM": "GN",
+    }
+    for k, v in defaults.items():
+        if not hasattr(f, k):
+            setattr(f, k, v)
 
 # ---------- hooks ----------
 
@@ -274,7 +423,19 @@ def load_torchvision_resnet50_to_backbone(model):
     tv_model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
     tv_state = tv_model.state_dict()
 
-    d2_backbone = model.backbone.bottom_up
+    # Найдём реальный бэкбон внутри модели (учитывая FCOSDetector shim)
+    target_model = model
+    # unwrap FCOSDetector -> FCOS
+    if hasattr(target_model, "model") and not hasattr(target_model, "backbone"):
+        target_model = getattr(target_model, "model")
+
+    # возьмём backbone / backbone.bottom_up
+    if hasattr(target_model, "backbone"):
+        bb = getattr(target_model, "backbone")
+        d2_backbone = getattr(bb, "bottom_up", bb)
+    else:
+        print("[WEIGHTS] No backbone found on model; skip torchvision init")
+        return
     d2_state = d2_backbone.state_dict()
     remap = {}
 
@@ -327,9 +488,103 @@ def load_torchvision_resnet50_to_backbone(model):
 def build_cfg(args, num_classes: int) -> Any:
     cfg = get_cfg()
 
-    # База RetinaNet; НЕ берём детектроновские COCO-веса (оставим cfg.MODEL.WEIGHTS="")
-    retinanet_yaml = "COCO-Detection/retinanet_R_50_FPN_1x.yaml"
-    cfg.merge_from_file(model_zoo.get_config_file(retinanet_yaml))
+    # Определим доступность FCOS в текущей сборке detectron2
+    def _has_fcos():
+        # Вариант 1: FCOS из AdelaiDet (предпочтительно)
+        try:
+            import adet  # noqa: F401  # регистрация моделей
+            from adet.config import add_fcos_config  # noqa: F401
+            return "adet"
+        except Exception:
+            pass
+        # Вариант 2: FCOS внутри detectron2 (если присутствует)
+        try:
+            from detectron2.modeling.meta_arch import fcos  # noqa: F401
+            return "d2"
+        except Exception:
+            return ""
+
+    prefer_fcos = getattr(args, "prefer_fcos", True)
+    fcos_src = _has_fcos()
+
+    if prefer_fcos and fcos_src:
+        # Собираем FCOS (AdelaiDet или встроенный D2)
+        cfg.merge_from_file(model_zoo.get_config_file("Base-RCNN-FPN.yaml"))
+        if fcos_src == "adet":
+            try:
+                from adet.config import add_fcos_config
+                add_fcos_config(cfg)  # добавляет узел MODEL.FCOS и др.
+            except Exception:
+                print("[WARN] AdelaiDet найден, но add_fcos_config не сработал. Создам MODEL.FCOS вручную.")
+        # Если после добавления узла его всё ещё нет — создаём вручную
+        if not hasattr(cfg.MODEL, "FCOS"):
+            cfg.MODEL.FCOS = CN()
+            cfg.MODEL.FCOS.NUM_CLASSES = num_classes
+            cfg.MODEL.FCOS.INFERENCE_TH = args.infer_th
+            cfg.MODEL.FCOS.NMS_TH = 0.6
+            cfg.MODEL.FCOS.PRIOR_PROB = 0.01
+            cfg.MODEL.FCOS.SIZES_OF_INTEREST = [[-1, 64], [64, 128], [128, 256], [256, 512], [512, 999999]]
+            cfg.MODEL.FCOS.FPN_STRIDES = [8, 16, 32, 64, 128]
+            cfg.MODEL.FCOS.INFERENCE_TH_TRAIN = 0.05
+            cfg.MODEL.FCOS.CENTER_SAMPLE = True
+            cfg.MODEL.FCOS.POS_RADIUS = 1.5
+            cfg.MODEL.FCOS.YIELD_PROPOSAL = False
+            cfg.MODEL.FCOS.YIELD_BOX_FEATURES = False
+            cfg.MODEL.FCOS.USE_DEFORMABLE = False
+            cfg.MODEL.FCOS.DEFORMABLE_GROUPS = 1
+            cfg.MODEL.FCOS.NORM = "GN"
+            cfg.MODEL.FCOS.IN_FEATURES = ["p3", "p4", "p5", "p6", "p7"]
+            # Минимальные требования FCOSHead из AdelaiDet
+            cfg.MODEL.FCOS.NUM_CLS_CONVS = 4
+            cfg.MODEL.FCOS.NUM_BOX_CONVS = 4
+        cfg.MODEL.META_ARCHITECTURE = "FCOS"
+        cfg.MODEL.BACKBONE.NAME = "build_resnet_fpn_backbone"
+        cfg.MODEL.RESNETS.DEPTH = 50
+        cfg.MODEL.RESNETS.OUT_FEATURES = ["res2", "res3", "res4", "res5"]
+        cfg.MODEL.FPN.IN_FEATURES = ["res2", "res3", "res4", "res5"]
+        # Гиперпараметры FCOS
+        cfg.MODEL.FCOS.NUM_CLASSES = num_classes
+        cfg.MODEL.ROI_HEADS.NUM_CLASSES = num_classes
+        cfg.MODEL.FCOS.INFERENCE_TH = args.infer_th
+        cfg.MODEL.FCOS.NMS_TH = 0.6
+        cfg.MODEL.FCOS.PRIOR_PROB = 0.01
+        cfg.MODEL.FCOS.SIZES_OF_INTEREST = [[-1, 64], [64, 128], [128, 256], [256, 512], [512, 999999]]
+        cfg.MODEL.FCOS.FPN_STRIDES = [8, 16, 32, 64, 128]
+        cfg.MODEL.FCOS.INFERENCE_TH_TRAIN = 0.05
+        cfg.MODEL.FCOS.CENTER_SAMPLE = True
+        cfg.MODEL.FCOS.POS_RADIUS = 1.5
+        cfg.MODEL.FCOS.YIELD_PROPOSAL = False
+        cfg.MODEL.FCOS.YIELD_BOX_FEATURES = False
+        if not hasattr(cfg.MODEL.FCOS, "USE_DEFORMABLE"):
+            cfg.MODEL.FCOS.USE_DEFORMABLE = False
+        if not hasattr(cfg.MODEL.FCOS, "DEFORMABLE_GROUPS"):
+            cfg.MODEL.FCOS.DEFORMABLE_GROUPS = 1
+        cfg.MODEL.FCOS.NORM = "GN"
+        if not hasattr(cfg.MODEL.FCOS, "IN_FEATURES"):
+            cfg.MODEL.FCOS.IN_FEATURES = ["p3", "p4", "p5", "p6", "p7"]
+        if not hasattr(cfg.MODEL.FCOS, "NUM_CLS_CONVS"):
+            cfg.MODEL.FCOS.NUM_CLS_CONVS = 4
+        if not hasattr(cfg.MODEL.FCOS, "NUM_BOX_CONVS"):
+            cfg.MODEL.FCOS.NUM_BOX_CONVS = 4
+        # Универсально заполним все недостающие ключи FCOS
+        try:
+            _fill_missing_fcos_keys(cfg)
+        except Exception:
+            pass
+        cfg._SELECTED_META_ARCH = "FCOS"
+    else:
+        if prefer_fcos and not fcos_src:
+            raise RuntimeError(
+                "FCOS недоступен. Установите AdelaiDet (рекомендуется):\n"
+                "  pip install 'git+https://github.com/aim-uofa/AdelaiDet'\n"
+                "или используйте Detectron2 сборку с FCOS, либо запустите без --prefer-fcos."
+            )
+        retinanet_yaml = "COCO-Detection/retinanet_R_50_FPN_1x.yaml"
+        cfg.merge_from_file(model_zoo.get_config_file(retinanet_yaml))
+        cfg.MODEL.RETINANET.SCORE_THRESH_TEST = args.infer_th
+        cfg.MODEL.RETINANET.NUM_CLASSES = num_classes
+        cfg.MODEL.ROI_HEADS.NUM_CLASSES = num_classes
+        cfg._SELECTED_META_ARCH = "RetinaNet"
 
     cfg.DATASETS.TRAIN = ("psy_train",)
     cfg.DATASETS.TEST  = ("psy_val",)
@@ -345,14 +600,10 @@ def build_cfg(args, num_classes: int) -> Any:
     cfg.INPUT.MAX_SIZE_TEST  = max(args.min_size_test, 1280)
     cfg.INPUT.RANDOM_FLIP = "horizontal"
 
-    cfg.MODEL.RETINANET.SCORE_THRESH_TEST = args.infer_th
-    cfg.MODEL.ROI_HEADS.NUM_CLASSES = num_classes
-    cfg.MODEL.RETINANET.NUM_CLASSES = num_classes
-
     if args.device:
         cfg.MODEL.DEVICE = args.device
 
-    cfg.MODEL.WEIGHTS = ""  # важно: не грузим COCO-веса Detectron2
+    cfg.MODEL.WEIGHTS = ""
 
     cfg.SOLVER.IMS_PER_BATCH = args.ims_per_batch
     cfg.SOLVER.BASE_LR = args.base_lr
@@ -420,6 +671,7 @@ def parse_args():
     ap.add_argument("--min-size-test", type=int, default=720)
     ap.add_argument("--infer-th", type=float, default=0.3)
     ap.add_argument("--seed", type=int, default=-1)
+    ap.add_argument("--prefer-fcos", action="store_true", help="Принудительно использовать FCOS (ошибка, если недоступен)")
     return ap.parse_args()
 
 def sanity_paths(args):
@@ -457,6 +709,52 @@ def main():
     print(f"[INFO] NUM_CLASSES = {num_classes}")
 
     cfg = build_cfg(args, num_classes)
+    print(f"[ARCH] Selected meta-architecture: {getattr(cfg, '_SELECTED_META_ARCH', 'unknown')}")
+
+    # Гарантируем регистрацию выбранной meta-архитектуры
+    try:
+        from detectron2.modeling import META_ARCH_REGISTRY
+        selected = getattr(cfg, "_SELECTED_META_ARCH", cfg.MODEL.META_ARCHITECTURE)
+        candidates = [selected]
+        if selected == "FCOS":
+            # Предпочтительно использовать FCOSDetector (имеет сигнатуру Detectron2)
+            candidates = ["FCOSDetector", "FCOS"]
+        resolved = None
+        for name in candidates:
+            try:
+                META_ARCH_REGISTRY.get(name)
+                resolved = name
+                break
+            except KeyError:
+                continue
+        if resolved is None and selected == "FCOS":
+            # Попробуем принудительно зарегистрировать класс из AdelaiDet
+            import importlib
+            try:
+                mod = importlib.import_module("adet.modeling.fcos.fcos")
+                for cls_name in ["FCOS", "FCOSDetector"]:
+                    if hasattr(mod, cls_name):
+                        try:
+                            META_ARCH_REGISTRY.register(getattr(mod, cls_name))
+                        except Exception:
+                            pass
+                # Проверим снова
+                for name in ["FCOSDetector", "FCOS"]:
+                    try:
+                        META_ARCH_REGISTRY.get(name)
+                        resolved = name
+                        break
+                    except KeyError:
+                        continue
+            except Exception:
+                pass
+        if resolved is None:
+            raise RuntimeError("FCOS не зарегистрирован в META_ARCH. Проверьте установку AdelaiDet в текущем окружении.")
+        # Принудительно используем шиму, чтобы точно задействовать новый forward
+        cfg.MODEL.META_ARCHITECTURE = "FCOSDetectorShim"
+        print("[ARCH] Using registered meta-architecture: FCOSDetectorShim")
+    except Exception:
+        raise
 
     setup_logger(output=str(Path(args.outdir)))
     default_setup(cfg, {})  # пишет полный конфиг на диск
