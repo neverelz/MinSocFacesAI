@@ -141,8 +141,7 @@ class FaceRecognizer:
         return names, sims
 
     def get_next_person_id(self) -> str:
-        global DATABASE_DIR  # ← ИСПРАВЛЕНО: добавлено global
-        db_dir = safe_makedirs(DATABASE_DIR, exist_ok=True)
+        db_dir = safe_makedirs(self.db_dir, exist_ok=True)
         max_id = 0
         for name in os.listdir(db_dir):
             if os.path.isdir(os.path.join(db_dir, name)) and name.isdigit():
@@ -151,6 +150,7 @@ class FaceRecognizer:
                 except:
                     continue
         return str(max_id + 1)
+
 
     def _get_next_image_index(self, person_id: str) -> int:
         person_dir = os.path.join(self.db_dir, person_id)

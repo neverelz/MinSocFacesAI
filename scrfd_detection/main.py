@@ -1,4 +1,4 @@
-# main.py — финальная кросс-платформенная версия с поддержкой Linux (включая Qt backend)
+# main.py — финальная кросс-платформенная версия с поддержкой Linux (Qt backend)
 import cv2
 import time
 import numpy as np
