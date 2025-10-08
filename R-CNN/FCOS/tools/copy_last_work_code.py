@@ -63,15 +63,8 @@ from pathlib import Path
 from typing import List, Tuple, Any
 import importlib
 
-import faulthandler, os as _os
-faulthandler.enable()
-_os.environ.setdefault("PYTHONFAULTHANDLER", "1")
-_os.environ.setdefault("TORCH_SHOW_CPP_STACKTRACES", "1")
-
 import numpy as np
 import torch
-torch.set_num_threads(1)
-torch.set_num_interop_threads(1)
 import torch.nn as nn
 import cv2
 from yacs.config import CfgNode as CN
@@ -111,7 +104,7 @@ from detectron2.data import transforms as T
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
 from detectron2.data import build_detection_test_loader
 from detectron2.utils.logger import setup_logger
-from detectron2.structures import ImageList, BoxMode, Instances, Boxes
+from detectron2.structures import ImageList, BoxMode
 from detectron2.modeling import META_ARCH_REGISTRY
 from detectron2.modeling.backbone.fpn import build_resnet_fpn_backbone
 from detectron2.modeling import ShapeSpec
@@ -134,115 +127,68 @@ try:
 except Exception:
     _adet_fcos_mod = None
 
-try:
-    _map = META_ARCH_REGISTRY._obj_map  # Detectron2 Registry внутренний словарь
-    _map.pop("FCOSDetector", None)
-    _map.pop("FCOSDetectorShim", None)
-except Exception:
-    pass
-
 @META_ARCH_REGISTRY.register()
-class FCOSDetector(nn.Module):  # уникальное имя в реестре
+class FCOSDetector(nn.Module):  # noqa: N801
     """
-    Обёртка над AdelaiDet FCOS, согласующая:
-    - форматы IN_FEATURES/FPN_STRIDES/SIZES_OF_INTEREST (Nx2)
-    - корректный вызов forward(images, features, targets) в режиме train
-    - безопасную нормализацию/санитацию targets
+    Обёртка для AdelaiDet FCOS, всегда регистрируется.
+    Жёстко используем FPN-бэкбон, чтобы получить dict фичей ("p3"...).
     """
-
     def __init__(self, cfg):
         super().__init__()
-
-        # --- проверяем наличие AdelaiDet FCOS ---
-        try:
-            _adet_fcos_mod = importlib.import_module("adet.modeling.fcos.fcos")
-            assert hasattr(_adet_fcos_mod, "FCOS")
-        except Exception:
+        if _adet_fcos_mod is None:
             raise RuntimeError(
-                "AdelaiDet (FCOS) не найден. Установите:\n"
-                "  pip install 'git+https://github.com/aim-uofa/AdelaiDet'\n"
-                "или запустите без --prefer-fcos (fallback на RetinaNet)."
+                "AdelaiDet (FCOS) не найден. Установи: "
+                "pip install 'git+https://github.com/aim-uofa/AdelaiDet'  "
+                "или запусти без --prefer-fcos (fallback на RetinaNet)."
             )
-
-        # --- строим FPN-бэкбон, чтобы получить фактические уровни pX ---
+        # FPN-бэкбон -> dict feature maps (p2..p7)
         self.backbone = build_resnet_fpn_backbone(cfg, ShapeSpec(channels=3))
+
         input_shape = self.backbone.output_shape()
 
-        # Согласуем IN_FEATURES и производные параметры
+        # Синхронизируем IN_FEATURES/STRIDES/SOI с реально доступными уровнями
         desired = ["p3", "p4", "p5", "p6", "p7"]
         available = [k for k in input_shape.keys() if k.startswith("p")]
-
         def _plevel(s):
             try:
                 return int(s[1:])
             except Exception:
                 return 0
-
         available = sorted(available, key=_plevel)
         in_feats = [l for l in desired if l in available] or available
 
-        stride_map = {"p2": 4, "p3": 8, "p4": 16, "p5": 32, "p6": 64, "p7": 128}
-        fpn_strides = [stride_map.get(l, 8) for l in in_feats]
-
-        # Nx2 пары — эталонная сетка диапазонов
-        soi_pairs_full = [[-1, 64], [64, 128], [128, 256], [256, 512], [512, 999999]]
-        soi_pairs = soi_pairs_full[: len(in_feats)]
-
-        # Обновляем cfg → чтобы FCOS-голова читала корректные значения
         cfg.MODEL.FCOS.IN_FEATURES = in_feats
-        cfg.MODEL.FCOS.FPN_STRIDES = fpn_strides
-        cfg.MODEL.FCOS.SIZES_OF_INTEREST = soi_pairs  # именно Nx2
-        if not hasattr(cfg.MODEL.FCOS, "BOX_QUALITY") or cfg.MODEL.FCOS.BOX_QUALITY not in ("ctrness", "iou"):
-            cfg.MODEL.FCOS.BOX_QUALITY = "ctrness"
+        stride_map = {"p2": 4, "p3": 8, "p4": 16, "p5": 32, "p6": 64, "p7": 128}
+        cfg.MODEL.FCOS.FPN_STRIDES = [stride_map.get(l, 8) for l in in_feats]
+        full_soi_flat = [64, 128, 256, 512, 999999]
+        cfg.MODEL.FCOS.SIZES_OF_INTEREST = full_soi_flat[: len(in_feats)]
 
-        # Создаём саму AdelaiDet FCOS-метаарх
+        # --- создаём FCOS, подменяем backbone и in_features как было ---
         self.model = _adet_fcos_mod.FCOS(cfg, input_shape)
-        # Подменяем бэкбон и уровни фич
         self.model.backbone = self.backbone
         self.model.in_features = in_feats
 
-        # --- ЖЁСТКАЯ нормализация полей внутри fcos_outputs ---
-        if hasattr(self.model, "fcos_outputs"):
-            # 1) strides: некоторые сборки оставляют None
-            if getattr(self.model.fcos_outputs, "fpn_strides", None) in (None, []):
-                self.model.fcos_outputs.fpn_strides = fpn_strides
+        # (важно) привести внутреннее поле к плоскому списку тоже:
+        if hasattr(self.model, "fcos_outputs") and hasattr(self.model.fcos_outputs, "sizes_of_interest"):
+            soi = self.model.fcos_outputs.sizes_of_interest
+            # если вдруг пришёл список пар – расплющим
+            if isinstance(soi, (list, tuple)) and len(soi) > 0 and isinstance(soi[0], (list, tuple)):
+                soi = [p[1] for p in soi]
+            self.model.fcos_outputs.sizes_of_interest = soi[: len(in_feats)]
 
-            # 2) sizes_of_interest: строго список пар [lo, hi] (без вложенности)
-            raw_soi = getattr(self.model.fcos_outputs, "sizes_of_interest", None)
+        # # Инициализация AdelaiDet FCOS
+        # self.model = _adet_fcos_mod.FCOS(cfg, input_shape)
+        # # Подменяем бэкбон FCOS на наш FPN (dict p2..p6)
+        # self.model.backbone = self.backbone
+        #
+        # # Синхронизируем уровни фич с реально доступными
+        # available = [k for k in input_shape.keys() if k.startswith("p")]
+        # available = sorted(available, key=lambda s: int(s[1:]) if s[1:].isdigit() else 0)
+        # desired = ["p3", "p4", "p5", "p6", "p7"]
+        # in_feats = [l for l in desired if l in available] or available
+        # self.model.in_features = in_feats  # важно: пусть сам возьмёт нужные слои внутри
 
-            def _coerce_soi_to_pairs(x, fallback_pairs):
-                # Превращаем любые варианты в [[lo, hi], ...] длины = len(in_feats)
-                if x is None:
-                    return [[float(a), float(b)] for a, b in fallback_pairs]
-
-                # Если пришли скаляры (пороги) -> сделаем из них пары по fallback
-                if isinstance(x, (list, tuple)) and len(x) > 0 and not isinstance(x[0], (list, tuple)):
-                    return [[float(a), float(b)] for a, b in fallback_pairs]
-
-                pairs = []
-                for el in list(x)[: len(in_feats)]:
-                    # Варианты вложенности: [[lo,hi]] или [lo,hi] или (lo,hi)
-                    if isinstance(el, (list, tuple)) and len(el) == 1 and isinstance(el[0], (list, tuple)):
-                        el = el[0]
-                    if isinstance(el, (list, tuple)) and len(el) == 2 \
-                            and not isinstance(el[0], (list, tuple)) and not isinstance(el[1], (list, tuple)):
-                        lo, hi = float(el[0]), float(el[1])
-                    else:
-                        # Непонятный формат — берём из fallback
-                        idx = len(pairs)
-                        lo, hi = map(float, fallback_pairs[idx])
-                    pairs.append([lo, hi])
-                # если было меньше уровней — дополним из fallback
-                while len(pairs) < len(in_feats):
-                    idx = len(pairs)
-                    lo, hi = map(float, fallback_pairs[idx])
-                    pairs.append([lo, hi])
-                return pairs
-
-            coerced_soi = _coerce_soi_to_pairs(raw_soi, soi_pairs)
-            self.model.fcos_outputs.sizes_of_interest = coerced_soi
-
-        # Нормализация изображений как в Detectron2
+        # Нормализация изображений
         pixel_mean = torch.Tensor(cfg.MODEL.PIXEL_MEAN).view(-1, 1, 1)
         pixel_std = torch.Tensor(cfg.MODEL.PIXEL_STD).view(-1, 1, 1)
         self.register_buffer("pixel_mean", pixel_mean, persistent=False)
@@ -250,108 +196,60 @@ class FCOSDetector(nn.Module):  # уникальное имя в реестре
         self.device = torch.device(cfg.MODEL.DEVICE)
         self.to(self.device)
 
-    def _sanitize_targets(self, batched_inputs, image_sizes):
-        """
-        Гарантируем, что у каждого элемента есть корректный Instances
-        с gt_boxes (XYXY на устройстве) и gt_classes (int64).
-        """
-        for i, d in enumerate(batched_inputs):
-            h, w = image_sizes[i]
-            inst = d.get("instances", None)
-            if inst is None:
-                inst = Instances((h, w))
-                d["instances"] = inst
-            # корректный размер
-            if not hasattr(inst, "image_size") or inst.image_size is None:
-                inst._image_size = (h, w)
-            # обязательные поля
-            if not inst.has("gt_boxes"):
-                inst.set("gt_boxes", Boxes(torch.zeros((0, 4), device=self.device)))
-            else:
-                inst.gt_boxes.clip((h, w))
-                inst.gt_boxes.tensor = inst.gt_boxes.tensor.to(self.device).float()
-            if not inst.has("gt_classes"):
-                inst.set("gt_classes", torch.zeros((0,), dtype=torch.int64, device=self.device))
-            else:
-                inst.gt_classes = inst.gt_classes.to(self.device).long()
+    def forward(self, batched_inputs):
+        # images = [x["image"].to(self.device) for x in batched_inputs]
+        # images = [(img - self.pixel_mean) / self.pixel_std for img in images]
+        # images = ImageList.from_tensors(images, self.backbone.size_divisibility)
+        #
+        # # 1) Получаем признаки
+        # features = self.backbone(images.tensor)
+        #
+        # # 2) Приводим к dict, если это list/tuple/другое
+        # if not isinstance(features, dict):
+        #     # пробуем вытащить имена из output_shape()
+        #     try:
+        #         keys = list(self.backbone.output_shape().keys())
+        #     except Exception:
+        #         keys = []
+        #     if isinstance(features, (list, tuple)):
+        #         if len(keys) == len(features):
+        #             features = {k: v for k, v in zip(keys, features)}
+        #         else:
+        #             # надёжный фолбэк: p2, p3, ...
+        #             names = [f"p{i}" for i in range(2, 2 + len(features))]
+        #             features = {k: v for k, v in zip(names, features)}
+        #     else:
+        #         # последний фолбэк: оборачиваем в p2
+        #         features = {"p2": features}
+        #
+        # # 3) Синхронизируем in_features FCOS-головы с реально доступными уровнями
+        # avail = sorted([k for k in features.keys() if k.startswith("p")],
+        #                key=lambda s: int(s[1:]) if s[1:].isdigit() else 0)
+        # desired = ["p3", "p4", "p5", "p6", "p7"]
+        # in_feats = [l for l in desired if l in avail] or avail  # если p3..p7 нет, берём что есть
+        # print("[DBG] avail feature levels:", avail)
+        #
+        # # Если у внутренней модели есть поле in_features — приводим его к доступным
+        # if hasattr(self.model, "in_features"):
+        #     # только если текущие in_features не все присутствуют
+        #     if not all(f in features for f in getattr(self.model, "in_features", [])):
+        #         self.model.in_features = in_feats
 
-    def forward(self, batched_inputs, **kwargs):
-        """
-        Train:  ImageList -> features -> targets (list[Instances]) -> FCOS(..., targets) -> return losses(dict)
-        Test:   targets=None -> FCOS(..., None) -> return predictions(list)
-        """
-        # 1) изображения
-        imgs = [x["image"].to(self.device) for x in batched_inputs]
-        imgs = [(img - self.pixel_mean) / self.pixel_std for img in imgs]
-        images = ImageList.from_tensors(imgs, self.backbone.size_divisibility)
+        # 4) Передаём дальше (AdelaiDet внутри ожидает dict)
+        # return self.model(features, batched_inputs)
 
-        # 2) признаки
+        # Собираем батч тензоров и нормализуем как в Detectron2
+        images = [x["image"].to(self.device) for x in batched_inputs]
+        images = [(img - self.pixel_mean) / self.pixel_std for img in images]
+        images = ImageList.from_tensors(images, self.backbone.size_divisibility)
+
+        # Прогоняем через наш FPN -> ПОЛУЧАЕМ СЛОВАРЬ { "p2": ..., "p3": ..., ... }
         features_dict = self.backbone(images.tensor)
-        assert isinstance(features_dict, dict), "FPN must return dict of feature maps"
 
-        # 3) targets (только при training)
-        targets = None
-        if self.training:
-            self._sanitize_targets(batched_inputs, images.image_sizes)
-            targets = [d["instances"].to(self.device) for d in batched_inputs]
-            # полностью пустой batch → нулевые лоссы с grad_fn
-            if all((t.gt_boxes.tensor.numel() == 0) for t in targets):
-                dummy = None
-                for p in self.model.parameters():
-                    if p.requires_grad:
-                        v = p.sum() * 0.0
-                        dummy = v if dummy is None else (dummy + v)
-                if dummy is None:
-                    dummy = torch.zeros([], device=self.device, dtype=torch.float32, requires_grad=True)
-                return {"loss_fcos_cls": dummy, "loss_fcos_loc": dummy, "loss_fcos_ctr": dummy}
+        # Важно: не делаем [features_dict[f] for f in ...] — FCOS сам это сделает.
+        # AdelaiDet-FCOS ожидает сигнатуру (features_dict, batched_inputs)
+        return self.model(batched_inputs, features=features_dict)
 
-        # одноразовый dbg
-        if not hasattr(self, "_once_dbg"):
-            soi = getattr(self.model.fcos_outputs, "sizes_of_interest", None)
-            strides = getattr(self.model.fcos_outputs, "fpn_strides", None)
-
-            def _pairs_shape(x):
-                try:
-                    n = len(x)
-                    m = len(x[0]) if n > 0 and hasattr(x[0], "__len__") else None
-                    return (n, m)
-                except Exception:
-                    return None
-
-            print("[DBG] in_features:", self.model.in_features)
-            print("[DBG] strides:", strides)
-            print("[DBG] sizes_of_interest shape:", _pairs_shape(soi))
-            print("[DBG] BOX_QUALITY:", getattr(self.model.fcos_outputs, "box_quality", None))
-            self._once_dbg = True
-
-        # 4) вызов AdelaiDet FCOS
-        out = self.model(images, features_dict, targets)
-
-        # 5) согласование формата выхода под Detectron2 Trainer
-        if self.training:
-            # ожидается dict лоссов
-            if isinstance(out, tuple):
-                # AdelaiDet: (results, losses)
-                _, losses = out
-                return losses
-            elif isinstance(out, dict):
-                return out
-            else:
-                raise TypeError(f"Unexpected FCOS train output type: {type(out)}")
-        else:
-            # ожидается список предсказаний
-            if isinstance(out, tuple):
-                preds, _ = out
-                return preds
-            return out
-
-
-try:
-    _map = META_ARCH_REGISTRY._obj_map  # Detectron2 Registry внутренний словарь
-    _map.pop("FCOSDetector", None)
-    _map.pop("FCOSDetectorShim", None)
-except Exception:
-    pass
 # Всегда регистрируем шиму — наследник, чтобы можно было явно выбрать в cfg
 @META_ARCH_REGISTRY.register()
 class FCOSDetectorShim(FCOSDetector):  # noqa: N801
@@ -368,31 +266,16 @@ def read_categories_from_coco(json_path: str) -> List[str]:
     cats_sorted = sorted(cats, key=lambda c: int(c.get("id", 0)))
     return [c.get("name", str(c.get("id"))) for c in cats_sorted]
 
-# def build_augs():
-#     # Чуть мягче, без RandomExtent (он часто "убивает" боксы)
-#     return [
-#         T.RandomFlip(horizontal=True, vertical=False),
-#         T.RandomRotation(angle=[-8, 8], sample_style="range", expand=False),
-#         T.RandomBrightness(0.95, 1.05),
-#         T.RandomContrast(0.95, 1.05),
-#         T.RandomSaturation(0.95, 1.05),
-#         # RandomExtent можно вернуть позже, когда убедимся, что GT не пропадает
-#         # T.RandomExtent(scale_range=(0.95, 1.05), shift_range=(0.02, 0.02)),
-#     ]
-
 def build_augs():
-    """
-    Упрощённые и «безопасные» аугментации для tiny-сетов.
-    Важно: убираем Rotation и RandomExtent — они часто выносят маленькие боксы за кадр.
-    """
+    # Лёгкие и безопасные аугментации
     return [
         T.RandomFlip(horizontal=True, vertical=False),
-        T.RandomBrightness(0.95, 1.05),
-        T.RandomContrast(0.95, 1.05),
-        T.RandomSaturation(0.95, 1.05),
-        # Без геометрических аугментаций на первых запусках
+        T.RandomRotation(angle=[-10, 10], sample_style="range", expand=False),
+        T.RandomBrightness(0.9, 1.1),
+        T.RandomContrast(0.9, 1.1),
+        T.RandomSaturation(0.9, 1.1),
+        T.RandomExtent(scale_range=(0.9, 1.1), shift_range=(0.05, 0.05)),
     ]
-
 
 def mapper_with_augs(dataset_dict):
     dataset_dict = dataset_dict.copy()
@@ -408,117 +291,30 @@ def mapper_with_augs(dataset_dict):
     for obj in annos_raw:
         a = utils.transform_instance_annotations(obj, tfms, (H, W))
 
+        # --- robust bbox extraction ---
         bbox = a.get("bbox", None)
         if bbox is None:
             continue
         bbox_np = np.asarray(bbox, dtype=np.float32)
 
+        # Приводим к XYXY_ABS, если вдруг не так
         bm = a.get("bbox_mode", BoxMode.XYXY_ABS)
         if bm != BoxMode.XYXY_ABS:
             bbox_np = BoxMode.convert(bbox_np, bm, BoxMode.XYXY_ABS)
 
+        # Берём первые четыре координаты и проверяем площадь > 0
         x0, y0, x1, y1 = map(float, bbox_np[:4])
-        # Чуть более щадящий фильтр маленьких боксов
-        if (x1 - x0) < 0.5 or (y1 - y0) < 0.5:
+        if (x1 - x0) < 1.0 or (y1 - y0) < 1.0:
             continue
-
         a["bbox"] = [x0, y0, x1, y1]
         a["bbox_mode"] = BoxMode.XYXY_ABS
+
         annos.append(a)
-
-    H2, W2 = image.shape[:2]
-    inst = utils.annotations_to_instances(annos, (H2, W2))
-    if inst.has("gt_boxes"):
-        inst.gt_boxes.clip((H2, W2))
-
-    # Гарантируем наличие gt_classes даже при пустом списке боксов
-    if not inst.has("gt_classes"):
-        inst.set("gt_classes", torch.zeros((0,), dtype=torch.int64))
 
     return {
         "image": torch.as_tensor(image.transpose(2, 0, 1).copy()).float(),
-        "height": H2,
-        "width": W2,
-        "instances": inst,
+        "instances": utils.annotations_to_instances(annos, image.shape[:2])
     }
-
-# def mapper_with_augs(dataset_dict):
-#     dataset_dict = dataset_dict.copy()
-#
-#     # 1) читаем исходное изображение
-#     image = utils.read_image(dataset_dict["file_name"], format="BGR")
-#
-#     # 2) собираем аугментации и применяем к AugInput
-#     augs = build_augs()
-#     aug_input = T.AugInput(image)
-#     tfms = T.AugmentationList(augs)(aug_input)
-#
-#     # --- optional debug: логируем, был ли hflip ---
-#     try:
-#         from detectron2.data.transforms.transform import HFlipTransform
-#         did_hflip = any(isinstance(t, HFlipTransform) for t in tfms.transforms)
-#         if did_hflip:
-#             print(f"[AUG DBG] HFlip applied to {dataset_dict.get('file_name')}")
-#     except Exception:
-#         pass
-#
-#
-#     # 3) получаем уже АУГМЕНТИРОВАННОЕ изображение и его НОВЫЙ размер
-#     image = aug_input.image
-#     H2, W2 = image.shape[:2]
-#
-#     # 4) прогоняем аннотации через ТЕ ЖЕ трансформы,
-#     #    НО с image_size = (H2, W2) — размером ПОСЛЕ аугментаций
-#     annos_raw = dataset_dict.get("annotations", [])
-#     annos = []
-#     for obj in annos_raw:
-#         a = utils.transform_instance_annotations(obj, tfms, (H2, W2))
-#
-#         # robust bbox extraction
-#         bbox = a.get("bbox", None)
-#         if bbox is None:
-#             continue
-#
-#         # transform_instance_annotations уже переводит в XYXY_ABS,
-#         # но оставим безопасный блок — если вдруг режим другой, конвертим
-#         bm = a.get("bbox_mode", BoxMode.XYXY_ABS)
-#         if bm != BoxMode.XYXY_ABS:
-#             bbox_np = np.asarray(bbox, dtype=np.float32)
-#             bbox_np = BoxMode.convert(bbox_np, bm, BoxMode.XYXY_ABS)
-#             x0, y0, x1, y1 = map(float, bbox_np[:4])
-#             a["bbox"] = [x0, y0, x1, y1]
-#             a["bbox_mode"] = BoxMode.XYXY_ABS
-#
-#         # отфильтруем вырожденные боксы
-#         x0, y0, x1, y1 = map(float, a["bbox"][:4])
-#         if (x1 - x0) < 1.0 or (y1 - y0) < 1.0:
-#             continue
-#
-#         annos.append(a)
-#
-#     # 5) делаем Instances, клипнем боксы в границы НОВОГО изображения
-#     inst = utils.annotations_to_instances(annos, (H2, W2))
-#     if inst.has("gt_boxes"):
-#         inst.gt_boxes.clip((H2, W2))
-#
-#     # 6) вернём тензор уже после аугментаций
-#     return {
-#         "image": torch.as_tensor(image.transpose(2, 0, 1).copy()).float(),
-#         "height": H2,
-#         "width": W2,
-#         "instances": inst,
-#     }
-
-
-def mapper_skip_none(d):
-    """
-    Обёртка маппера: если маппер вернул None (все боксы пропали) — просим лоадер пересэмплировать.
-    Detectron2 перехватывает такие ошибки и берёт другой элемент.
-    """
-    out = mapper_with_augs(d)
-    if out is None:
-        raise ValueError("empty-sample")
-    return out
 
 # ---------- FCOS config defaults ----------
 
@@ -543,7 +339,7 @@ def _fill_missing_fcos_keys(cfg):
         "POST_NMS_TOPK_TEST": 1000,
         "THRESH_WITH_CTR": False,
         "CENTERNESS_ON_REG": False,
-        "BOX_QUALITY": "ctrness", ###"спонсор моей бессонной ночи -> "ctrness" или "iou", а не "centerness"
+        "BOX_QUALITY": "centerness",
         "CENTER_SAMPLE": True,
         "POS_RADIUS": 1.5,
         "YIELD_PROPOSAL": False,
@@ -612,32 +408,6 @@ class SafeCheckpointHook(HookBase):
         except Exception:
             print("[WARN] Failed to save final safe checkpoint:\n", traceback.format_exc())
 
-class HeartbeatHook(HookBase):
-    """
-    Шумный хук, который печатает прогресс на каждом шаге и принудительно
-    сбрасывает stdout/stderr — чтобы в PyCharm/IDE ничего не «застряло».
-    """
-    def __init__(self, every: int = 1):
-        self.every = max(1, int(every))
-
-    def before_train(self):
-        print("[HB] Training starting…", flush=True)
-
-    def after_step(self):
-        it = self.trainer.iter + 1
-        if it % self.every == 0:
-            try:
-                loss = float(self.trainer.storage.history('total_loss').latest())
-            except Exception:
-                loss = float('nan')
-            print(f"[HB] iter={it} loss={loss}", flush=True)
-
-    def after_train(self):
-        print("[HB] Training finished.", flush=True)
-
-
-
-
 class PauseHook(HookBase):
     """
     Пауза по флагу <outdir>/pause.flag или сигналу SIGUSR1.
@@ -680,8 +450,7 @@ class PauseHook(HookBase):
 class Trainer(DefaultTrainer):
     @classmethod
     def build_train_loader(cls, cfg):
-        # Используем обёртку, которая скипает пустые после аугментаций сэмплы
-        return build_detection_train_loader(cfg, mapper=mapper_skip_none)
+        return build_detection_train_loader(cfg, mapper=mapper_with_augs)
 
     @classmethod
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
@@ -689,7 +458,6 @@ class Trainer(DefaultTrainer):
             output_folder = os.path.join(cfg.OUTPUT_DIR, "inference", dataset_name)
         safe_mkdir(Path(output_folder))
         return COCOEvaluator(dataset_name, cfg, True, output_folder)
-
 
 # ---------- latency / FPS test ----------
 
@@ -832,13 +600,16 @@ def load_torchvision_resnet50_to_backbone(model):
 def build_cfg(args, num_classes: int) -> Any:
     cfg = get_cfg()
 
+    # Определим доступность FCOS в текущей сборке detectron2
     def _has_fcos():
+        # Вариант 1: FCOS из AdelaiDet (предпочтительно)
         try:
-            import adet  # noqa: F401
+            import adet  # noqa: F401  # регистрация моделей
             from adet.config import add_fcos_config  # noqa: F401
             return "adet"
         except Exception:
             pass
+        # Вариант 2: FCOS внутри detectron2 (если присутствует)
         try:
             from detectron2.modeling.meta_arch import fcos  # noqa: F401
             return "d2"
@@ -849,51 +620,65 @@ def build_cfg(args, num_classes: int) -> Any:
     fcos_src = _has_fcos()
 
     if prefer_fcos and fcos_src:
+        # Собираем FCOS (AdelaiDet или встроенный D2)
         cfg.merge_from_file(model_zoo.get_config_file("Base-RCNN-FPN.yaml"))
         if fcos_src == "adet":
             try:
                 from adet.config import add_fcos_config
-                add_fcos_config(cfg)
+                add_fcos_config(cfg)  # добавляет узел MODEL.FCOS и др.
             except Exception:
                 print("[WARN] AdelaiDet найден, но add_fcos_config не сработал. Создам MODEL.FCOS вручную.")
-
+        # Если после добавления узла его всё ещё нет — создаём вручную
         if not hasattr(cfg.MODEL, "FCOS"):
             cfg.MODEL.FCOS = CN()
-
-        # --- ключевые FCOS-параметры ---
-        cfg.MODEL.FCOS.NUM_CLASSES = num_classes
-        cfg.MODEL.ROI_HEADS.NUM_CLASSES = num_classes
-        cfg.MODEL.FCOS.INFERENCE_TH = args.infer_th
-        cfg.MODEL.FCOS.NMS_TH = 0.6
-        cfg.MODEL.FCOS.PRIOR_PROB = 0.01
-
-        # ВАЖНО: SIZES_OF_INTEREST как Nx2-пары по умолчанию (на 5 уровней)
-        cfg.MODEL.FCOS.SIZES_OF_INTEREST = [[-1, 64], [64, 128], [128, 256], [256, 512], [512, 999999]]
-        cfg.MODEL.FCOS.FPN_STRIDES = [8, 16, 32, 64, 128]
-        cfg.MODEL.FCOS.IN_FEATURES = ["p3", "p4", "p5", "p6", "p7"]
-
-        cfg.MODEL.FCOS.INFERENCE_TH_TRAIN = 0.05
-        cfg.MODEL.FCOS.CENTER_SAMPLE = True
-        cfg.MODEL.FCOS.POS_RADIUS = 1.5
-        cfg.MODEL.FCOS.YIELD_PROPOSAL = False
-        cfg.MODEL.FCOS.YIELD_BOX_FEATURES = False if hasattr(cfg.MODEL.FCOS, "YIELD_BOX_FEATURES") else False
-        if not hasattr(cfg.MODEL.FCOS, "USE_DEFORMABLE"):
+            cfg.MODEL.FCOS.NUM_CLASSES = num_classes
+            cfg.MODEL.FCOS.INFERENCE_TH = args.infer_th
+            cfg.MODEL.FCOS.NMS_TH = 0.6
+            cfg.MODEL.FCOS.PRIOR_PROB = 0.01
+            cfg.MODEL.FCOS.SIZES_OF_INTEREST = [[-1, 64], [64, 128], [128, 256], [256, 512], [512, 999999]]
+            cfg.MODEL.FCOS.FPN_STRIDES = [8, 16, 32, 64, 128]
+            cfg.MODEL.FCOS.INFERENCE_TH_TRAIN = 0.05
+            cfg.MODEL.FCOS.CENTER_SAMPLE = True
+            cfg.MODEL.FCOS.POS_RADIUS = 1.5
+            cfg.MODEL.FCOS.YIELD_PROPOSAL = False
+            cfg.MODEL.FCOS.YIELD_BOX_FEATURES = False
             cfg.MODEL.FCOS.USE_DEFORMABLE = False
-        if not hasattr(cfg.MODEL.FCOS, "DEFORMABLE_GROUPS"):
             cfg.MODEL.FCOS.DEFORMABLE_GROUPS = 1
-        cfg.MODEL.FCOS.NORM = "GN"
-        if not hasattr(cfg.MODEL.FCOS, "NUM_CLS_CONVS"):
+            cfg.MODEL.FCOS.NORM = "GN"
+            cfg.MODEL.FCOS.IN_FEATURES = ["p3", "p4", "p5", "p6", "p7"]
+            # Минимальные требования FCOSHead из AdelaiDet
             cfg.MODEL.FCOS.NUM_CLS_CONVS = 4
-        if not hasattr(cfg.MODEL.FCOS, "NUM_BOX_CONVS"):
             cfg.MODEL.FCOS.NUM_BOX_CONVS = 4
-
-        # Бэкбон R50-FPN
         cfg.MODEL.META_ARCHITECTURE = "FCOS"
         cfg.MODEL.BACKBONE.NAME = "build_resnet_fpn_backbone"
         cfg.MODEL.RESNETS.DEPTH = 50
         cfg.MODEL.RESNETS.OUT_FEATURES = ["res2", "res3", "res4", "res5"]
         cfg.MODEL.FPN.IN_FEATURES = ["res2", "res3", "res4", "res5"]
-
+        # Гиперпараметры FCOS
+        cfg.MODEL.FCOS.NUM_CLASSES = num_classes
+        cfg.MODEL.ROI_HEADS.NUM_CLASSES = num_classes
+        cfg.MODEL.FCOS.INFERENCE_TH = args.infer_th
+        cfg.MODEL.FCOS.NMS_TH = 0.6
+        cfg.MODEL.FCOS.PRIOR_PROB = 0.01
+        cfg.MODEL.FCOS.SIZES_OF_INTEREST = [[-1, 64], [64, 128], [128, 256], [256, 512], [512, 999999]]
+        cfg.MODEL.FCOS.FPN_STRIDES = [8, 16, 32, 64, 128]
+        cfg.MODEL.FCOS.INFERENCE_TH_TRAIN = 0.05
+        cfg.MODEL.FCOS.CENTER_SAMPLE = True
+        cfg.MODEL.FCOS.POS_RADIUS = 1.5
+        cfg.MODEL.FCOS.YIELD_PROPOSAL = False
+        cfg.MODEL.FCOS.YIELD_BOX_FEATURES= False if hasattr(cfg.MODEL.FCOS, "YIELD_BOX_FEATURES") else False  # safety
+        if not hasattr(cfg.MODEL.FCOS, "USE_DEFORMABLE"):
+            cfg.MODEL.FCOS.USE_DEFORMABLE = False
+        if not hasattr(cfg.MODEL.FCOS, "DEFORMABLE_GROUPS"):
+            cfg.MODEL.FCOS.DEFORMABLE_GROUPS = 1
+        cfg.MODEL.FCOS.NORM = "GN"
+        if not hasattr(cfg.MODEL.FCOS, "IN_FEATURES"):
+            cfg.MODEL.FCOS.IN_FEATURES = ["p3", "p4", "p5", "p6", "p7"]
+        if not hasattr(cfg.MODEL.FCOS, "NUM_CLS_CONVS"):
+            cfg.MODEL.FCOS.NUM_CLS_CONVS = 4
+        if not hasattr(cfg.MODEL.FCOS, "NUM_BOX_CONVS"):
+            cfg.MODEL.FCOS.NUM_BOX_CONVS = 4
+        # Универсально заполним все недостающие ключи FCOS
         try:
             _fill_missing_fcos_keys(cfg)
         except Exception:
@@ -914,19 +699,21 @@ def build_cfg(args, num_classes: int) -> Any:
         cfg._SELECTED_META_ARCH = "RetinaNet"
 
     cfg.DATASETS.TRAIN = ("psy_train",)
-    cfg.DATASETS.TEST = ("psy_val",)
-
+    cfg.DATASETS.TEST  = ("psy_val",)
+    # [PATCH] NUM_WORKERS напрямую; persistent_workers выключен
     cfg.DATALOADER.NUM_WORKERS = args.workers
     if hasattr(cfg.DATALOADER, "PERSISTENT_WORKERS"):
         cfg.DATALOADER.PERSISTENT_WORKERS = False
-    cfg.DATALOADER.SAMPLER_TRAIN = "TrainingSampler"
-    cfg.DATALOADER.FILTER_EMPTY_ANNOTATIONS = True
+    cfg.DATALOADER.SAMPLER_TRAIN = "RepeatFactorTrainingSampler"
+    cfg.DATALOADER.REPEAT_THRESHOLD = args.repeat_threshold
+    cfg.DATALOADER.FILTER_EMPTY_ANNOTATIONS = False
     cfg.DATALOADER.ASPECT_RATIO_GROUPING = False
 
+    # [PATCH] слегка расширенный multi-scale
     cfg.INPUT.MIN_SIZE_TRAIN = (640, 720, 800, 896)
     cfg.INPUT.MAX_SIZE_TRAIN = 1333
-    cfg.INPUT.MIN_SIZE_TEST = args.min_size_test
-    cfg.INPUT.MAX_SIZE_TEST = max(args.min_size_test, 1280)
+    cfg.INPUT.MIN_SIZE_TEST  = args.min_size_test
+    cfg.INPUT.MAX_SIZE_TEST  = max(args.min_size_test, 1280)
     cfg.INPUT.RANDOM_FLIP = "horizontal"
 
     if args.device:
@@ -939,6 +726,7 @@ def build_cfg(args, num_classes: int) -> Any:
     cfg.SOLVER.MAX_ITER = args.max_iter
     cfg.SOLVER.STEPS = []
     cfg.SOLVER.WARMUP_ITERS = min(1000, max(200, args.max_iter // 20))
+    # [PATCH] более стабильные дефолты оптимизации
     cfg.SOLVER.WARMUP_FACTOR = 1.0 / 1000
     cfg.SOLVER.WEIGHT_DECAY = 1e-4
     cfg.SOLVER.MOMENTUM = 0.9
@@ -950,8 +738,8 @@ def build_cfg(args, num_classes: int) -> Any:
 
     cfg.OUTPUT_DIR = args.outdir
     safe_mkdir(Path(cfg.OUTPUT_DIR))
-    return cfg
 
+    return cfg
 
 # ---------- tiny predictor for FPS ----------
 
@@ -1106,12 +894,10 @@ def main():
     # Хуки
     trainer.start_time = time.time()
     trainer.register_hooks([
-        HeartbeatHook(every=1),  # новый «пульс» на каждом шаге
-        ETAHook(total_iter=cfg.SOLVER.MAX_ITER, log_path=log_file, every=20),
+        ETAHook(total_iter=cfg.SOLVER.MAX_ITER, log_path=log_file, every=50),
         PauseHook(outdir=Path(cfg.OUTPUT_DIR), poll_every=10),
         SafeCheckpointHook(outdir=Path(cfg.OUTPUT_DIR)),
     ])
-    print("[MAIN] Hooks registered, starting trainer.train() …", flush=True)
 
     # Обучение с перехватом ошибок
     try:

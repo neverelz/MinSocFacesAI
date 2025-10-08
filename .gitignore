@@ -13,6 +13,8 @@ __pycache__/
 
 /myenv/
 
+OpenImageV7/
+
 # Distribution / packaging
 .Python
 build/

@@ -1,6 +1,5 @@
 {
   "__global__": {
-    "comb": "__ignore__",
     "brush": "__ignore__",
     "Speed Square": "__ignore__",
     "Drill": "__ignore__",
@@ -17,9 +16,9 @@
     "Yellow": "__ignore__",
     "scalvin set_waste": "__ignore__",
     "plastic_waste": "__ignore__",
-    "paper_waste": "__ignore__",
+    "paper_waste":"__ignore__",
     "drip_waste": "__ignore__",
-    "dog": "__ignore__",
+    "dog":"__ignore__",
     "standing": "__ignore__",
     "ball": "__ignore__",
     "lying": "__ignore__",
@@ -61,7 +60,7 @@
     "ballpen-3": "Pen",
     "ballpen-4": "Pen",
     "ballpen-5": "Pen",
-    "Ball Point": "Pen",
+    "Ball Point":"Pen",
     "ballpoint": "Pen",
     "Ball point": "Pen",
     "Bllpoint": "Pen",
@@ -74,7 +73,6 @@
     "pencil sharpener": "Sharpener",
     "Sharpner": "Sharpener",
     "sharpner": "Sharpener",
-    "Sharpener": "Sharpener",
     "Notebook": "Book",
     "book": "Book",
     "Correction_tape": "Corrector",
@@ -88,7 +86,6 @@
     "sessior": "Scissors",
     "STAPLER": "Stapler",
     "black-stapler": "Stapler",
-    "-Stapler-": "Stapler",
     "stapeler": "Stapler",
     "stapler": "Stapler",
     "cutter knife": "Stationery_knife",
@@ -102,18 +99,12 @@
     "tape": "Scotch_tape",
     "Measuring tape": "Measuring_tape",
     "gluestick": "Glue",
-    "Glue": "Glue",
     "highlighter": "Marker",
     "marker": "Marker",
     "tahta_kalemi": "Marker",
     "Scale": "Ruler",
-    "Ruler": "Ruler",
     "paper clips": "Clip",
-    "Clip": "Clip",
-    "Compass": "Compass",
-    "Folder": "Folder",
     "hammer-in-hand": "Hammer",
-    "Hammer": "Hammer",
     "pliers": "Pliers",
     "pliers-in-hand": "Pliers",
     "Longnose pliers": "Pliers",
@@ -135,10 +126,9 @@
     "wires": "Wire",
     "vday_tt": "Wire",
     "Exposed_Wires": "Wire",
-    "exposed_wire": "",
     "damage_wire": "Wire",
     "Cords": "Wire",
-    "cu": "Wire",
+    "cu":  "Wire",
     "harness": "Wire",
     "ddan_boc_tt": "Wire",
     "ddan_ct": "Wire",
@@ -263,7 +253,6 @@
     "zanedip": "Pill_packaging",
     "mask": "Mask",
     "bandage": "Bandage",
-    "bandage_waste": "Bandage",
     "IV-tube": "IV_drip",
     "iv-bottles": "IV_drip",
     "Iv set_waste": "IV_drip",
@@ -272,34 +261,7 @@
     "gloves_waste": "Gloves",
     "gloves": "Gloves"
   },
-  "_extracted/med": {
-    "1": "Medical_scissors",
-    "2": "Medical_scissors",
-    "3": "Medical_scissors",
-    "4": "Medical_scissors",
-    "5": "Medical_scissors",
-    "6": "Medical_scissors",
-    "7": "Medical_scissors",
-    "8": "Medical_scissors",
-    "9": "Medical_instruments",
-    "10": "Medical_pliers",
-    "11": "Medical_pliers",
-    "12": "Medical_instruments",
-    "13": "Medical_pliers",
-    "14": "Medical_instruments",
-    "15": "Medical_instruments",
-    "16": "Medical_scissors",
-    "17": "Medical_instruments",
-    "18": "Medical_instruments",
-    "19": "Medical_instruments",
-    "20": "Medical_pins",
-    "21": "Medical_pins",
-    "22": "Medical_instruments",
-    "23": "Medical_tweezers",
-    "24": "Medical_tweezers",
-    "25": "Medical_tweezers",
-    "26": "Medical_pins"
-  },
+
   "med/translator_v1i_coco": {
     "1": "Medical_scissors",
     "2": "Medical_scissors",
@@ -328,6 +290,7 @@
     "25": "Medical_tweezers",
     "26": "Medical_pins"
   },
+
   "med/Material_medico_v1i_coco": {
     "0": "Medical_scissors",
     "1": "Medical_scissors",
@@ -341,20 +304,24 @@
     "9": "Medical_instruments",
     "10": "Medical_instruments"
   },
+
   "med/biomedical-wastes_v3-main_coco": {
     "0": "Syringe",
     "1": "Needle"
   },
+
   "stationary/32_v1i_coco": {
     "0": "__ignore__",
     "1": "__ignore__",
     "2": "Knife"
   },
+
   "stationary/relabel2_v1i_coco": {
     "0": "Scissors",
     "1": "Pen",
     "2": "Eraser"
   },
+
   "med/surgical_instruments_v1i_coco": {
     "1": "Medical_scissors",
     "2": "Medical_pliers",
@@ -370,6 +337,7 @@
     "12": "Medical_tweezers",
     "13": "Medical_pins"
   },
+
   "med/surgical_tools_v1i_coco": {
     "11-5530": "Medical_tweezers",
     "11-5534": "Medical_pins",
@@ -392,23 +360,29 @@
     "35-3189": "Medical_scissors",
     "3L": "Medical_pins"
   },
+
   "med/Deteksi_Obat2_v3i_coco": {
     "Paracetamol": "Pill_packaging",
     "Methil": "Pill_packaging",
     "Antasida": "Pill_packaging"
   },
+
   "stationary/stationery_detection_for_5_v1i_coco": {
     "knife": "Stationery_knife"
   },
+
   "stationary/AI_PROJ_FARIHAH_v1i_coco": {
     "TAPE": "Measuring_tape"
   },
+
   "stationary/fire.v2-fire1.coco": {
     "objects": "__ignore__"
   },
+
   "stationary/lighter.v1i.coco": {
     "2": "Lighter"
   },
+
   "med/bio-medical classification.v1i.coco": {
     "Black": "__ignore__",
     "Blue": "__ignore__",
@@ -423,6 +397,7 @@
     "plastic_waste": "__ignore__",
     "scalvin set_waste": "__ignore__"
   },
+
   "med/MedicalInstruments_v1i_coco": {
     "instrument-1": "Medical_scissors",
     "instrument-2": "Medical_scissors",
@@ -446,37 +421,8 @@
     "instrument-20": "Medical_scissors",
     "instrument-21": "Medical_scissors",
     "instrument-22": "Medical_scissors"
-  },
-  "med/Surgical_Tool_Detection_2_v1i_coco": {
-    "1": "__ignore__",
-    "2": "__ignore__",
-    "3": "__ignore__",
-    "4": "__ignore__",
-    "5": "__ignore__",
-    "6": "__ignore__",
-    "7": "__ignore__",
-    "8": "__ignore__",
-    "9": "__ignore__",
-    "10": "__ignore__",
-    "11": "__ignore__",
-    "12": "__ignore__",
-    "13": "__ignore__",
-    "14": "__ignore__",
-    "15": "__ignore__",
-    "16": "__ignore__",
-    "17": "__ignore__",
-    "18": "__ignore__",
-    "19": "__ignore__",
-    "20": "__ignore__",
-    "21": "__ignore__",
-    "22": "__ignore__",
-    "23": "__ignore__",
-    "24": "__ignore__",
-    "25": "__ignore__",
-    "26": "__ignore__"
   }
 }
-
 
 
 
