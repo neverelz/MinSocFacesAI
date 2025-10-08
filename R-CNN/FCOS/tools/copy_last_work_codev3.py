@@ -547,6 +547,7 @@ class FreezeBackboneHook(HookBase):
     def _rebuild_optimizer(self):
         # корректно пересобираем оптимизатор под новое множество trainable-параметров
         try:
+            # у DefaultTrainer есть build_optimizer(cls, cfg, model)
             new_opt = type(self.trainer).build_optimizer(self.trainer.cfg, self.trainer.model)
         except Exception:
             from detectron2.solver import build_optimizer
@@ -590,6 +591,7 @@ class FreezeBackboneHook(HookBase):
 
             # разморозка
             self._set_requires_grad(bb, True)
+            # можно вернуть norm-слои к train(), но detectron2 сам управляет .train()
             bb.train()
 
             # важное: пересобираем оптимизатор заново — теперь с параметрами бэкбона
@@ -781,14 +783,10 @@ def build_cfg(args, num_classes: int) -> Any:
 
         cfg.MODEL.META_ARCHITECTURE = "FCOS"
         cfg.MODEL.BACKBONE.NAME = "build_resnet_fpn_backbone"
-        cfg.MODEL.RESNETS.DEPTH = args.resnet_depth
-        if args.resnet_depth in (18, 34):
-            cfg.MODEL.RESNETS.RES2_OUT_CHANNELS = 64
-            cfg.MODEL.RESNETS.NUM_GROUPS = 1
-            cfg.MODEL.RESNETS.WIDTH_PER_GROUP = 64
-        # для R50/R101/R152 Detectron2 по умолчанию использует RES2_OUT_CHANNELS=256
+        cfg.MODEL.RESNETS.DEPTH = args.resnet_depth #<-- было 50, теперь из аргумента
         cfg.MODEL.RESNETS.OUT_FEATURES = ["res2", "res3", "res4", "res5"]
         cfg.MODEL.FPN.IN_FEATURES = ["res2", "res3", "res4", "res5"]
+
 
         try:
             _fill_missing_fcos_keys(cfg)
@@ -798,7 +796,7 @@ def build_cfg(args, num_classes: int) -> Any:
     else:
         retinanet_yaml = "COCO-Detection/retinanet_R_50_FPN_1x.yaml"
         cfg.merge_from_file(model_zoo.get_config_file(retinanet_yaml))
-        cfg.MODEL.RESNETS.DEPTH = args.resnet_depth
+        cfg.MODEL.RESNETS.DEPTH = args.resnet_depth  # принудительно R18/R34 и т.д.
         cfg.MODEL.RETINANET.SCORE_THRESH_TEST = args.infer_th
         cfg.MODEL.RETINANET.NUM_CLASSES = num_classes
         cfg.MODEL.ROI_HEADS.NUM_CLASSES = num_classes
@@ -810,7 +808,7 @@ def build_cfg(args, num_classes: int) -> Any:
     cfg.DATALOADER.NUM_WORKERS = args.workers
     if hasattr(cfg.DATALOADER, "PERSISTENT_WORKERS"):
         cfg.DATALOADER.PERSISTENT_WORKERS = False
-    # RepeatFactorSampler включен по умолчанию
+    # >>> RepeatFactorSampler включен по умолчанию <<<
     cfg.DATALOADER.SAMPLER_TRAIN = "RepeatFactorTrainingSampler"
     cfg.DATALOADER.REPEAT_THRESHOLD = args.repeat_threshold
     cfg.DATALOADER.FILTER_EMPTY_ANNOTATIONS = True
@@ -857,10 +855,6 @@ def make_cfg_retinanet_r18(args, num_classes: int, outdir: str, max_iter: int,
     cfg.MODEL.RETINANET.SCORE_THRESH_TEST = args.infer_th
 
     cfg.MODEL.RESNETS.DEPTH = 18
-    # R18/R34 требуют RES2_OUT_CHANNELS=64
-    cfg.MODEL.RESNETS.RES2_OUT_CHANNELS = 64
-    cfg.MODEL.RESNETS.NUM_GROUPS = 1
-    cfg.MODEL.RESNETS.WIDTH_PER_GROUP = 64
     cfg.MODEL.RESNETS.OUT_FEATURES = ["res2","res3","res4","res5"]
     cfg.MODEL.FPN.IN_FEATURES = ["res2","res3","res4","res5"]
 
@@ -908,11 +902,6 @@ def make_cfg_fcos_r34(args, num_classes: int, outdir: str, max_iter: int,
     cfg.MODEL.META_ARCHITECTURE = "FCOSDetectorShim"
 
     cfg.MODEL.RESNETS.DEPTH = 34
-    # <<< FIX for R18/R34
-    cfg.MODEL.RESNETS.RES2_OUT_CHANNELS = 64
-    cfg.MODEL.RESNETS.NUM_GROUPS = 1
-    cfg.MODEL.RESNETS.WIDTH_PER_GROUP = 64
-    # >>>
     cfg.MODEL.RESNETS.OUT_FEATURES = ["res2","res3","res4","res5"]
     cfg.MODEL.FPN.IN_FEATURES = ["res2","res3","res4","res5"]
 
@@ -982,8 +971,9 @@ def parse_args():
     ap.add_argument("--weights", default="", help="Путь к .pth для загрузки перед обучением")
     ap.add_argument("--resnet-depth", type=int, default=50, choices=[18, 34, 50, 101, 152],
                     help="Глубина ResNet бэкбона для RetinaNet/FCOS")
-    ap.add_argument("--freeze-backbone-iters", type=int, default=0,
-                    help="Сколько итераций держать замороженным бэкбоном (ResNet bottom_up). 0 = отключено.")
+    ap.add_argument("--freeze-backbone-iters", type=int, default=0, help="Сколько итераций держать замороженным бэкбон (ResNet bottom_up). 0 = отключено."
+    )
+
     return ap.parse_args()
 
 def sanity_paths(args):
@@ -1010,13 +1000,6 @@ def main():
     args = parse_args()
     safe_mkdir(Path(args.outdir))
     sanity_paths(args)
-
-    # Reproducibility (optional)
-    if args.seed >= 0:
-        np.random.seed(args.seed)
-        torch.manual_seed(args.seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(args.seed)
 
     classes = register_datasets(args.train_json, args.train_img, args.val_json, args.val_img, args.test_json, args.test_img)
     num_classes = args.num_classes if args.num_classes is not None else len(classes)
@@ -1065,27 +1048,21 @@ def main():
         trainerA.train()
     except KeyboardInterrupt:
         print("\n[PIPE][A] INTERRUPTED -> saving checkpoint …")
-        try:
-            trainerA.checkpointer.save("model_interrupted")
-        except Exception:
-            pass
+        try: trainerA.checkpointer.save("model_interrupted")
+        except: pass
         sys.exit(130)
     except Exception:
-        print("[PIPE][A] crash -> saving last checkpoint & trace…")
-        try:
-            with (Path(outA) / "crash_trace.txt").open("w", encoding="utf-8") as f:
-                f.write("".join(traceback.format_exc()))
-        except Exception:
-            pass
-        try:
-            trainerA.checkpointer.save("model_crash")
-        except Exception:
-            pass
+        print("[PIPE][A] crash -> saving last checkpoint…")
+        try: trainerA.checkpointer.save("model_crash")
+        except: pass
         raise
+
+    # (опционально можно вставить быструю валидацию Stage A здесь)
 
     # ---------- ЭТАП B: FCOS R34-FPN ----------
     # Проверим регистрацию FCOS в реестре и выберем shim
     try:
+        selected = "FCOS"
         candidates = ["FCOSDetector", "FCOS"]
         resolved = None
         for name in candidates:
@@ -1122,7 +1099,6 @@ def main():
     )
     setup_logger(output=outB)
     default_setup(cfgB, {})
-
     # если передали --weights, используем их (вместо torchvision init)
     if getattr(args, "weights", ""):
         cfgB.MODEL.WEIGHTS = args.weights
@@ -1133,12 +1109,18 @@ def main():
     trainerB.register_hooks([
         # 0) Авто-заморозка/разморозка бэкбона + пересборка оптимизатора
         FreezeBackboneHook(iters=getattr(args, "freeze_backbone_iters", 0)),
+
         # 1) Пульс-лог (каждый шаг)
         HeartbeatHook(every=1),
+
         # 2) Прогноз ETA + лог в файл
-        ETAHook(total_iter=cfgB.SOLVER.MAX_ITER, log_path=Path(outB) / "train_log.txt", every=20),
+        ETAHook(total_iter=cfgB.SOLVER.MAX_ITER,
+                log_path=Path(outB) / "train_log.txt",
+                every=20),
+
         # 3) Пауза по флагу
         PauseHook(outdir=Path(cfgB.OUTPUT_DIR), poll_every=10),
+
         # 4) Безопасный финальный чекпоинт
         SafeCheckpointHook(outdir=Path(cfgB.OUTPUT_DIR)),
     ])
@@ -1150,24 +1132,16 @@ def main():
             print(
                 f"[CFG] Freeze backbone for the first {args.freeze_backbone_iters} iters → then unfreeze & rebuild optimizer.",
                 flush=True)
+
     except KeyboardInterrupt:
         print("\n[PIPE][B] INTERRUPTED -> saving checkpoint …")
-        try:
-            trainerB.checkpointer.save("model_interrupted")
-        except Exception:
-            pass
+        try: trainerB.checkpointer.save("model_interrupted")
+        except: pass
         sys.exit(130)
     except Exception:
-        print("[PIPE][B] crash -> saving last checkpoint & trace…")
-        try:
-            with (Path(outB) / "crash_trace.txt").open("w", encoding="utf-8") as f:
-                f.write("".join(traceback.format_exc()))
-        except Exception:
-            pass
-        try:
-            trainerB.checkpointer.save("model_crash")
-        except Exception:
-            pass
+        print("[PIPE][B] crash -> saving last checkpoint…")
+        try: trainerB.checkpointer.save("model_crash")
+        except: pass
         raise
 
     # ---------- Валидация (финальная модель = Stage B) ----------

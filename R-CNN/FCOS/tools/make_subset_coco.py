@@ -28,7 +28,7 @@ make_subset_coco.py — формирует подвыборку COCO:
     --ann /home/user/mrgv2/train/annotations.coco.json \
     --img-root /home/user/mrgv2/train/images \
     --out /home/user/mrgv2/pilot_per_class30_os \
-    --per-class 30 --balance --oversample --seed 42
+    --per-class 150 --balance --oversample --seed 42
 """
 import argparse, json, os, random, shutil, hashlib
 from collections import defaultdict, Counter
