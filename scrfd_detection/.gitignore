@@ -16,8 +16,6 @@ logs/
 *.tmp
 
 # Модели и данные
-faces_database/
-saved_embeddings.pkl
 *.h5
 *.pickle
 

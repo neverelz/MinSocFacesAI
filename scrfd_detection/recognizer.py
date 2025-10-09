@@ -202,4 +202,5 @@ class FaceRecognizer:
         self._all_labels = []
         self._label_to_indices = defaultdict(list)
         self.db_dir = safe_makedirs(self.db_dir, exist_ok=True)
+        self._rebuild_index()
         print("🧹 База и кэш очищены.")

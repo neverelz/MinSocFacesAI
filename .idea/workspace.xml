@@ -5,7 +5,51 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="6a303638-fe96-4d8a-a9ac-c4d6e35ee9a4" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/001.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/002.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/003.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/004.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/005.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/006.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/007.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/008.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/009.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/010.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/011.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/012.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/013.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/014.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/015.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/016.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/017.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/018.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/019.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/020.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/021.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/022.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/023.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/024.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/025.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/026.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/027.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/028.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/029.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/030.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/031.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/032.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/033.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/034.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/035.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/036.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/037.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/038.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/039.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/040.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/041.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/042.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/043.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/faces_database/1/044.jpg" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/saved_embeddings.pkl" beforeDir="false" afterPath="$PROJECT_DIR$/saved_embeddings.pkl" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -39,30 +83,33 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Python tests.Doctests in typing_objects.executor&quot;: &quot;Run&quot;,
-    &quot;Python.camera.executor&quot;: &quot;Run&quot;,
-    &quot;Python.check_person.executor&quot;: &quot;Run&quot;,
-    &quot;Python.fire.executor&quot;: &quot;Run&quot;,
-    &quot;Python.hands.executor&quot;: &quot;Run&quot;,
-    &quot;Python.locationing.executor&quot;: &quot;Run&quot;,
-    &quot;Python.main.executor&quot;: &quot;Run&quot;,
-    &quot;Python.recognizer.executor&quot;: &quot;Run&quot;,
-    &quot;Python.test_env.executor&quot;: &quot;Run&quot;,
-    &quot;Python.vladimir.executor&quot;: &quot;Run&quot;,
-    &quot;Python.w1.executor&quot;: &quot;Run&quot;,
-    &quot;Python.yolo11.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;katerina&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/belya/Documents/GitHub/MinSocFacesAI/scrfd_detection/main.py&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Python tests.Doctests in typing_objects.executor": "Run",
+    "Python.camera.executor": "Run",
+    "Python.check_person.executor": "Run",
+    "Python.fire.executor": "Run",
+    "Python.hands.executor": "Run",
+    "Python.locationing.executor": "Run",
+    "Python.main (1).executor": "Run",
+    "Python.main.executor": "Run",
+    "Python.recognizer.executor": "Run",
+    "Python.test_env.executor": "Run",
+    "Python.vladimir.executor": "Run",
+    "Python.w1.executor": "Run",
+    "Python.yolo11.executor": "Run",
+    "RunOnceActivity.OpenProjectViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "git-widget-placeholder": "katerina",
+    "last_directory_selection": "C:/Users/belya/Documents/GitHub/MinSocFacesAI/scrfd_detection/checkpoints",
+    "last_opened_file_path": "C:/Users/belya/Documents/GitHub/RosAtom",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\belya\Documents\GitHub\MinSocFacesAI\new_detection" />
       <recent name="C:\Users\belya\Documents\GitHub\MinSocFacesAI\scrfd_detection" />
       <recent name="C:\Users\belya\Documents\GitHub\MinSocFacesAI\scrfd_detection\raw_photos\4" />
     </key>
@@ -70,7 +117,29 @@
       <recent name="C:\Users\belya\Documents\GitHub\MinSocFacesAI\scrfd_detection" />
     </key>
   </component>
-  <component name="RunManager">
+  <component name="RunManager" selected="Python.main">
+    <configuration name="main (1)" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="MinSocFacesAI" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/new_detection" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/new_detection/main.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <configuration name="main" type="PythonConfigurationType" factoryName="Python" nameIsGenerated="true">
       <module name="MinSocFacesAI" />
       <option name="ENV_FILES" value="" />
@@ -94,6 +163,11 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Python.main (1)" />
+      </list>
+    </recent_temporary>
   </component>
   <component name="SharedIndexes">
     <attachedChunks>
